@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Blink Morse</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 5px; font-size: 1.5em; }
+        .subtitle { color: #666; font-size: 0.8em; margin-bottom: 15px; }
+        
+        #video-container {
+            position: relative;
+            width: 100%;
+            max-width: 320px;
+            aspect-ratio: 4/3;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+        }
+        #overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        #blink-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #333;
+            border: 2px solid #666;
+            transition: background 0.1s;
+        }
+        #blink-indicator.blink { background: #f00; border-color: #f66; box-shadow: 0 0 15px #f00; }
+        
+        #morse-display {
+            font-size: 2em;
+            font-family: monospace;
+            letter-spacing: 8px;
+            min-height: 50px;
+            color: #ff6;
+            margin-bottom: 10px;
+        }
+        
+        #output {
+            font-size: 1.8em;
+            min-height: 45px;
+            color: #6f6;
+            margin-bottom: 15px;
+            max-width: 100%;
+            word-wrap: break-word;
+            text-align: center;
+        }
+        
+        #current-char {
+            font-size: 3em;
+            color: #6bf;
+            margin-bottom: 10px;
+            min-height: 60px;
+        }
+        
+        #status {
+            color: #888;
+            font-size: 0.85em;
+            margin-bottom: 15px;
+        }
+        
+        .timing-help {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            font-size: 0.8em;
+            width: 100%;
+            max-width: 350px;
+        }
+        .timing-help h3 { margin-bottom: 8px; color: #ff6; }
+        .timing-help div { margin: 4px 0; color: #aaa; }
+        .timing-help span { color: #fff; }
+        
+        .morse-chart {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 5px;
+            font-size: 0.7em;
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 15px;
+        }
+        .morse-chart div {
+            background: rgba(255,255,255,0.05);
+            padding: 5px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .morse-chart .letter { color: #6bf; font-weight: bold; }
+        .morse-chart .code { color: #ff6; font-family: monospace; }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        button {
+            background: rgba(255, 200, 100, 0.2);
+            border: 1px solid rgba(255, 200, 100, 0.5);
+            color: #fc6;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            cursor: pointer;
+        }
+        button:hover { background: rgba(255, 200, 100, 0.3); }
+        
+        .back-link {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            color: #fc6;
+            text-decoration: none;
+            font-size: 1.5em;
+            background: rgba(255, 200, 100, 0.2);
+            padding: 5px 12px;
+            border-radius: 8px;
+            z-index: 100;
+        }
+        .back-link:hover { background: rgba(255, 200, 100, 0.3); }
+        
+        #ear {
+            font-size: 1.2em;
+            margin-bottom: 10px;
+            min-height: 30px;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">←</a>
+    <h1>👁️ Blink Morse</h1>
+    <p class="subtitle">Blink to type Morse code</p>
+    
+    <div id="video-container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="blink-indicator"></div>
+    </div>
+    
+    <div id="ear"></div>
+    <div id="morse-display">---</div>
+    <div id="current-char">?</div>
+    <div id="output"></div>
+    
+    <div id="status">Loading face detection...</div>
+    
+    <div class="timing-help">
+        <h3>How to blink:</h3>
+        <div>• <span>Short blink</span> (< 300ms) = dot (·)</div>
+        <div>• <span>Long blink</span> (> 300ms) = dash (−)</div>
+        <div>• <span>Eyes open 600ms</span> = end letter</div>
+        <div>• <span>Eyes open 1.5s</span> = space</div>
+    </div>
+    
+    <div class="controls">
+        <button id="clear-btn">Clear</button>
+        <button id="sound-btn">🔊 Sound</button>
+    </div>
+    
+    <div class="morse-chart" id="morse-chart"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    
+    <script>
+        // Morse code lookup
+        const MORSE = {
+            'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.', 'F': '..-.',
+            'G': '--.', 'H': '....', 'I': '..', 'J': '.---', 'K': '-.-', 'L': '.-..',
+            'M': '--', 'N': '-.', 'O': '---', 'P': '.--.', 'Q': '--.-', 'R': '.-.',
+            'S': '...', 'T': '-', 'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-',
+            'Y': '-.--', 'Z': '--..', '0': '-----', '1': '.----', '2': '..---',
+            '3': '...--', '4': '....-', '5': '.....', '6': '-....', '7': '--...',
+            '8': '---..', '9': '----.', '.': '.-.-.-', ',': '--..--', '?': '..--..'
+        };
+        
+        // Reverse lookup
+        const MORSE_REVERSE = {};
+        for (const [char, code] of Object.entries(MORSE)) {
+            MORSE_REVERSE[code] = char;
+        }
+        
+        // Build chart
+        const chartEl = document.getElementById('morse-chart');
+        for (const [char, code] of Object.entries(MORSE)) {
+            if (char.match(/[A-Z]/)) {
+                const div = document.createElement('div');
+                div.innerHTML = `<span class="letter">${char}</span> <span class="code">${code.replace(/-/g, '−').replace(/\./g, '·')}</span>`;
+                chartEl.appendChild(div);
+            }
+        }
+        
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const ctx = overlay.getContext('2d');
+        const blinkIndicator = document.getElementById('blink-indicator');
+        const morseDisplay = document.getElementById('morse-display');
+        const currentCharEl = document.getElementById('current-char');
+        const outputEl = document.getElementById('output');
+        const statusEl = document.getElementById('status');
+        const earEl = document.getElementById('ear');
+        const clearBtn = document.getElementById('clear-btn');
+        const soundBtn = document.getElementById('sound-btn');
+        
+        let faceMesh = null;
+        let soundEnabled = false;
+        let audioCtx = null;
+        
+        // Blink detection state
+        let isBlinking = false;
+        let blinkStartTime = 0;
+        let eyesOpenTime = 0;
+        let currentMorse = '';
+        let output = '';
+        let lastEAR = 1;
+        
+        // Timing thresholds (ms)
+        const DOT_THRESHOLD = 300;      // Blinks shorter than this = dot
+        const LETTER_GAP = 600;         // Eyes open this long = commit letter
+        const WORD_GAP = 1500;          // Eyes open this long = space
+        
+        // Eye landmarks (MediaPipe face mesh)
+        // Left eye: upper [159,145,158,153], lower [144,163,154,155]
+        // Right eye: upper [386,374,385,380], lower [373,390,381,382]
+        const LEFT_EYE_TOP = [159, 158, 157, 173];
+        const LEFT_EYE_BOTTOM = [144, 145, 146, 163];
+        const RIGHT_EYE_TOP = [386, 385, 384, 398];
+        const RIGHT_EYE_BOTTOM = [373, 374, 375, 390];
+        
+        function computeEAR(landmarks) {
+            // Eye Aspect Ratio - standard blink detection metric
+            function eyeEAR(top, bottom) {
+                let sumDist = 0;
+                for (let i = 0; i < top.length; i++) {
+                    const t = landmarks[top[i]];
+                    const b = landmarks[bottom[i]];
+                    sumDist += Math.abs(t.y - b.y);
+                }
+                return sumDist / top.length;
+            }
+            
+            const leftEAR = eyeEAR(LEFT_EYE_TOP, LEFT_EYE_BOTTOM);
+            const rightEAR = eyeEAR(RIGHT_EYE_TOP, RIGHT_EYE_BOTTOM);
+            return (leftEAR + rightEAR) / 2;
+        }
+        
+        function playTone(duration) {
+            if (!soundEnabled || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.value = 600;
+            gain.gain.value = 0.3;
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration / 1000);
+        }
+        
+        async function init() {
+            statusEl.textContent = 'Loading face mesh...';
+            
+            faceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+            });
+            
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            
+            faceMesh.onResults(onResults);
+            
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user', width: 320, height: 240 }
+            });
+            video.srcObject = stream;
+            await video.play();
+            
+            overlay.width = 320;
+            overlay.height = 240;
+            
+            statusEl.textContent = 'Ready! Blink to input Morse code.';
+            processFrame();
+        }
+        
+        async function processFrame() {
+            if (video.readyState >= 2) {
+                await faceMesh.send({ image: video });
+            }
+            requestAnimationFrame(processFrame);
+        }
+        
+        function onResults(results) {
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+            
+            if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+                statusEl.textContent = 'No face detected';
+                return;
+            }
+            
+            const landmarks = results.multiFaceLandmarks[0];
+            const ear = computeEAR(landmarks);
+            
+            // Adaptive threshold based on recent EAR
+            const EAR_THRESHOLD = 0.015; // Tune this
+            const blinkDetected = ear < EAR_THRESHOLD;
+            
+            const now = performance.now();
+            
+            // Draw eyes on overlay
+            ctx.save();
+            ctx.scale(-1, 1);
+            ctx.translate(-overlay.width, 0);
+            
+            ctx.fillStyle = blinkDetected ? '#f00' : '#0f0';
+            [...LEFT_EYE_TOP, ...LEFT_EYE_BOTTOM, ...RIGHT_EYE_TOP, ...RIGHT_EYE_BOTTOM].forEach(idx => {
+                const p = landmarks[idx];
+                ctx.beginPath();
+                ctx.arc(p.x * overlay.width, p.y * overlay.height, 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+            
+            // Blink state machine
+            if (blinkDetected && !isBlinking) {
+                // Blink started
+                isBlinking = true;
+                blinkStartTime = now;
+                blinkIndicator.classList.add('blink');
+                
+                // Check if we should commit letter or add space
+                const openDuration = now - eyesOpenTime;
+                if (currentMorse.length > 0 && openDuration > WORD_GAP) {
+                    commitLetter();
+                    output += ' ';
+                    outputEl.textContent = output;
+                } else if (currentMorse.length > 0 && openDuration > LETTER_GAP) {
+                    commitLetter();
+                }
+                
+            } else if (!blinkDetected && isBlinking) {
+                // Blink ended
+                isBlinking = false;
+                blinkIndicator.classList.remove('blink');
+                eyesOpenTime = now;
+                
+                const blinkDuration = now - blinkStartTime;
+                
+                if (blinkDuration > 50) { // Ignore very short glitches
+                    if (blinkDuration < DOT_THRESHOLD) {
+                        currentMorse += '.';
+                        earEl.textContent = '·';
+                        playTone(100);
+                    } else {
+                        currentMorse += '-';
+                        earEl.textContent = '−';
+                        playTone(300);
+                    }
+                    updateDisplay();
+                }
+            } else if (!blinkDetected && !isBlinking) {
+                // Eyes open - check for letter/word gap
+                const openDuration = now - eyesOpenTime;
+                
+                if (currentMorse.length > 0) {
+                    if (openDuration > WORD_GAP) {
+                        commitLetter();
+                        output += ' ';
+                        outputEl.textContent = output;
+                        earEl.textContent = '␣';
+                    } else if (openDuration > LETTER_GAP) {
+                        commitLetter();
+                    }
+                }
+            }
+            
+            statusEl.textContent = `EAR: ${ear.toFixed(3)} | ${isBlinking ? 'BLINK' : 'open'}`;
+            lastEAR = lastEAR * 0.9 + ear * 0.1;
+        }
+        
+        function updateDisplay() {
+            morseDisplay.textContent = currentMorse.replace(/-/g, '−').replace(/\./g, '·') || '---';
+            
+            // Show potential character
+            const char = MORSE_REVERSE[currentMorse];
+            currentCharEl.textContent = char || '?';
+        }
+        
+        function commitLetter() {
+            const char = MORSE_REVERSE[currentMorse];
+            if (char) {
+                output += char;
+                outputEl.textContent = output;
+            }
+            currentMorse = '';
+            updateDisplay();
+            currentCharEl.textContent = '✓';
+            setTimeout(() => { currentCharEl.textContent = '?'; }, 300);
+        }
+        
+        // Controls
+        clearBtn.addEventListener('click', () => {
+            currentMorse = '';
+            output = '';
+            outputEl.textContent = '';
+            morseDisplay.textContent = '---';
+            currentCharEl.textContent = '?';
+            earEl.textContent = '';
+        });
+        
+        soundBtn.addEventListener('click', () => {
+            soundEnabled = !soundEnabled;
+            soundBtn.textContent = soundEnabled ? '🔇 Mute' : '🔊 Sound';
+            if (soundEnabled && !audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        });
+        
+        init();
+    </script>
+</body>
+</html>
