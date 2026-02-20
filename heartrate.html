@@ -245,11 +245,6 @@
         }
         window.addEventListener('resize', resizeCanvases);
         
-        // Zoom control
-            zoom = parseFloat(e.target.value);
-            video.style.transform = `translate(-50%, -50%) scaleX(-${zoom}) scaleY(${zoom})`;
-        });
-        
         // Start camera
         async function startCamera() {
             try {
@@ -266,9 +261,6 @@
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 await video.play();
-                
-                // Apply initial zoom
-                video.style.transform = `translate(-50%, -50%) scaleX(-${zoom}) scaleY(${zoom})`;
                 
                 instructions.classList.add('hidden');
                 statusEl.textContent = 'Initializing face detection...';
