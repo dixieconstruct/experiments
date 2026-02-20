@@ -32,10 +32,10 @@
         }
         video {
             position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%) scaleX(-1);
-            min-width: 100%;
-            min-height: 100%;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
         }
         #overlay {
             position: absolute;
@@ -139,20 +139,6 @@
             font-size: 1.5em;
         }
         
-        #zoom-control {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        #zoom-control input {
-            width: 100px;
-            accent-color: #ff6b6b;
-        }
-        #zoom-control label {
-            color: #888;
-            font-size: 0.85em;
-        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -169,12 +155,6 @@
         <div id="instructions">
             <p>Tap to start</p>
         </div>
-    </div>
-    
-    <div id="zoom-control">
-        <label>Zoom:</label>
-        <input type="range" id="zoom-slider" min="1" max="3" step="0.1" value="1.5">
-        <span id="zoom-value">1.5x</span>
     </div>
     
     <div id="bpm-display">-- <span>BPM</span></div>
@@ -206,8 +186,6 @@
         const resetBtn = document.getElementById('reset-btn');
         const torchBtn = document.getElementById('torch-btn');
         const amplifyBtn = document.getElementById('amplify-btn');
-        const zoomSlider = document.getElementById('zoom-slider');
-        const zoomValue = document.getElementById('zoom-value');
         const videoContainer = document.getElementById('video-container');
         
         let stream = null;
@@ -220,7 +198,6 @@
         let bpmHistory = [];
         let currentBPM = null;
         let isRunning = false;
-        let zoom = 1.5;
         let torchOn = false;
         let amplifyMode = false;
         let colorBuffer = [];
@@ -269,9 +246,7 @@
         window.addEventListener('resize', resizeCanvases);
         
         // Zoom control
-        zoomSlider.addEventListener('input', (e) => {
             zoom = parseFloat(e.target.value);
-            zoomValue.textContent = zoom.toFixed(1) + 'x';
             video.style.transform = `translate(-50%, -50%) scaleX(-${zoom}) scaleY(${zoom})`;
         });
         
@@ -417,31 +392,20 @@
         function getForeheadROI(face, containerW, containerH) {
             const box = face.boundingBox;
             
-            // Face box in normalized coords
+            // Face box in normalized coords (0-1)
             const faceX = box.xCenter - box.width / 2;
             const faceY = box.yCenter - box.height / 2;
-            
-            // Forehead is upper portion of face, centered
-            // Account for zoom: the visible area is 1/zoom of the video
-            const visibleW = 1 / zoom;
-            const visibleH = 1 / zoom;
-            const offsetX = (1 - visibleW) / 2;
-            const offsetY = (1 - visibleH) / 2;
-            
-            // Transform face coords to zoomed view
-            const adjX = (faceX - offsetX) / visibleW;
-            const adjY = (faceY - offsetY) / visibleH;
-            const adjW = box.width / visibleW;
-            const adjH = box.height / visibleH;
+            const faceW = box.width;
+            const faceH = box.height;
             
             // Mirror X for display (camera is mirrored)
-            const mirrorX = 1 - adjX - adjW;
+            const mirrorX = 1 - faceX - faceW;
             
             // Forehead region: center of forehead, well above eyebrows
-            const roiW = adjW * 0.45;
-            const roiH = adjH * 0.1;
-            const roiX = mirrorX + (adjW - roiW) / 2;
-            const roiY = adjY - adjH * 0.25; // Much higher - center of forehead
+            const roiW = faceW * 0.45;
+            const roiH = faceH * 0.1;
+            const roiX = mirrorX + (faceW - roiW) / 2;
+            const roiY = faceY - faceH * 0.1; // Above the face box
             
             return {
                 x: roiX * containerW,
@@ -450,9 +414,9 @@
                 height: roiH * containerH,
                 // For face box display
                 faceX: mirrorX * containerW,
-                faceY: adjY * containerH,
-                faceW: adjW * containerW,
-                faceH: adjH * containerH
+                faceY: faceY * containerH,
+                faceW: faceW * containerW,
+                faceH: faceH * containerH
             };
         }
         
@@ -527,18 +491,11 @@
             const containerW = overlay.width;
             const containerH = overlay.height;
             
-            // Draw video to canvas
+            // Draw video to canvas (mirrored to match CSS video display)
             overlayCtx.save();
             overlayCtx.translate(containerW, 0);
-            overlayCtx.scale(-zoom, zoom);
-            const offsetX = (video.videoWidth * (1 - 1/zoom)) / 2;
-            const offsetY = (video.videoHeight * (1 - 1/zoom)) / 2;
-            overlayCtx.drawImage(video, 
-                -offsetX, -offsetY,
-                video.videoWidth, video.videoHeight,
-                0, 0,
-                containerW / zoom, containerH / zoom
-            );
+            overlayCtx.scale(-1, 1);
+            overlayCtx.drawImage(video, 0, 0, containerW, containerH);
             overlayCtx.restore();
             
             // Run face detection every 5 frames
