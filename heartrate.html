@@ -222,8 +222,8 @@
         let isRunning = false;
         let zoom = 1.5;
         let torchOn = false;
-        let lastTemplate = null;
-        let templatePos = null;
+        let smoothedROI = null;
+        const ROI_SMOOTHING = 0.3; // Lower = smoother but laggier
         
         const BUFFER_SIZE = 300;
         const MIN_HZ = 0.7;
@@ -335,8 +335,7 @@
             timestamps = [];
             bpmHistory = [];
             currentBPM = null;
-            lastTemplate = null;
-            templatePos = null;
+            smoothedROI = null;
             bpmDisplay.innerHTML = '-- <span>BPM</span>';
             bpmDisplay.className = '';
             confidenceEl.textContent = '';
@@ -490,42 +489,31 @@
                 faceBox.style.width = roi.faceW + 'px';
                 faceBox.style.height = roi.faceH + 'px';
                 
-                // Template tracking for stability
-                if (lastTemplate && templatePos) {
-                    const searchMargin = 20;
-                    const match = matchTemplate(
-                        imageData, lastTemplate,
-                        Math.max(0, templatePos.x - searchMargin),
-                        Math.max(0, templatePos.y - searchMargin),
-                        Math.min(lastTemplate.width + searchMargin * 2, containerW - templatePos.x + searchMargin),
-                        Math.min(lastTemplate.height + searchMargin * 2, containerH - templatePos.y + searchMargin)
-                    );
-                    
-                    if (match && match.score < 1000) {
-                        // Blend tracked position with detected position
-                        roi.x = roi.x * 0.3 + match.x * 0.7;
-                        roi.y = roi.y * 0.3 + match.y * 0.7;
-                    }
+                // Smooth ROI position to reduce jitter
+                if (smoothedROI === null) {
+                    smoothedROI = { ...roi };
+                } else {
+                    smoothedROI.x = smoothedROI.x * (1 - ROI_SMOOTHING) + roi.x * ROI_SMOOTHING;
+                    smoothedROI.y = smoothedROI.y * (1 - ROI_SMOOTHING) + roi.y * ROI_SMOOTHING;
+                    smoothedROI.width = smoothedROI.width * (1 - ROI_SMOOTHING) + roi.width * ROI_SMOOTHING;
+                    smoothedROI.height = smoothedROI.height * (1 - ROI_SMOOTHING) + roi.height * ROI_SMOOTHING;
                 }
                 
-                // Update template periodically
-                if (frameCount % 30 === 0 && roi.width > 10 && roi.height > 10) {
-                    lastTemplate = extractTemplate(imageData, roi.x, roi.y, roi.width, roi.height);
-                    templatePos = { x: roi.x, y: roi.y };
-                }
+                // Use smoothed position for display and sampling
+                const displayROI = smoothedROI;
                 
                 // Show ROI box
                 roiBox.style.display = 'block';
-                roiBox.style.left = roi.x + 'px';
-                roiBox.style.top = roi.y + 'px';
-                roiBox.style.width = roi.width + 'px';
-                roiBox.style.height = roi.height + 'px';
+                roiBox.style.left = displayROI.x + 'px';
+                roiBox.style.top = displayROI.y + 'px';
+                roiBox.style.width = displayROI.width + 'px';
+                roiBox.style.height = displayROI.height + 'px';
                 
                 // Sample ROI - focus on center for best signal
-                const sampleX = Math.floor(roi.x + roi.width * 0.2);
-                const sampleY = Math.floor(roi.y + roi.height * 0.2);
-                const sampleW = Math.floor(roi.width * 0.6);
-                const sampleH = Math.floor(roi.height * 0.6);
+                const sampleX = Math.floor(displayROI.x + displayROI.width * 0.2);
+                const sampleY = Math.floor(displayROI.y + displayROI.height * 0.2);
+                const sampleW = Math.floor(displayROI.width * 0.6);
+                const sampleH = Math.floor(displayROI.height * 0.6);
                 
                 let greenSum = 0, redSum = 0, count = 0;
                 
