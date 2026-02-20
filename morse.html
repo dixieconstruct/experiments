@@ -243,7 +243,13 @@
         let eyesOpenTime = 0;
         let currentMorse = '';
         let output = '';
-        let lastEAR = 1;
+        let lastEAR = 0;
+        
+        // Auto-calibration
+        let earBaseline = null;
+        let earMin = 1;
+        let earSamples = [];
+        const CALIBRATION_SAMPLES = 60; // ~2 seconds of samples
         
         // Timing thresholds (ms)
         const DOT_THRESHOLD = 300;      // Blinks shorter than this = dot
@@ -334,9 +340,24 @@
             const landmarks = results.multiFaceLandmarks[0];
             const ear = computeEAR(landmarks);
             
-            // Adaptive threshold based on recent EAR
-            const EAR_THRESHOLD = 0.015; // Tune this
-            const blinkDetected = ear < EAR_THRESHOLD;
+            // Auto-calibration: collect samples with eyes open
+            if (earBaseline === null) {
+                earSamples.push(ear);
+                if (earSamples.length >= CALIBRATION_SAMPLES) {
+                    // Use 80th percentile as baseline (eyes open)
+                    earSamples.sort((a, b) => a - b);
+                    earBaseline = earSamples[Math.floor(earSamples.length * 0.8)];
+                    earMin = earSamples[Math.floor(earSamples.length * 0.1)];
+                    statusEl.textContent = `Calibrated! Baseline EAR: ${earBaseline.toFixed(3)}. Start blinking!`;
+                } else {
+                    statusEl.textContent = `Calibrating... keep eyes open (${earSamples.length}/${CALIBRATION_SAMPLES})`;
+                }
+                return;
+            }
+            
+            // Detect blink: EAR drops below 60% of baseline
+            const threshold = earBaseline * 0.6;
+            const blinkDetected = ear < threshold;
             
             const now = performance.now();
             
@@ -407,7 +428,7 @@
                 }
             }
             
-            statusEl.textContent = `EAR: ${ear.toFixed(3)} | ${isBlinking ? 'BLINK' : 'open'}`;
+            statusEl.textContent = `EAR: ${ear.toFixed(3)} / ${(earBaseline || 0).toFixed(3)} | ${isBlinking ? 'BLINK' : 'open'}`;
             lastEAR = lastEAR * 0.9 + ear * 0.1;
         }
         
@@ -439,6 +460,9 @@
             morseDisplay.textContent = '---';
             currentCharEl.textContent = '?';
             earEl.textContent = '';
+            // Reset calibration
+            earBaseline = null;
+            earSamples = [];
         });
         
         soundBtn.addEventListener('click', () => {
