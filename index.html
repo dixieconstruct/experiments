@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lorenz Attractor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #000;
+            overflow: hidden;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+        }
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            color: #666;
+            font-family: monospace;
+            font-size: 12px;
+            pointer-events: none;
+        }
+        #params {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            color: #888;
+            font-family: monospace;
+            font-size: 11px;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="controls">
+        drag: rotate · pinch: zoom · tap: reset
+    </div>
+    <div id="params"></div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const paramsEl = document.getElementById('params');
+
+        let width, height;
+        
+        // Lorenz parameters (touch-controllable)
+        let sigma = 10;
+        let rho = 28;
+        let beta = 8/3;
+        
+        // View controls
+        let rotationX = 0.5;
+        let rotationY = 0;
+        let zoom = 12;
+        
+        // Touch state
+        let touches = {};
+        let lastPinchDist = 0;
+        let lastTouchX = 0;
+        let lastTouchY = 0;
+        
+        // Trail
+        const maxPoints = 8000;
+        let points = [];
+        let x = 0.1, y = 0, z = 0;
+        const dt = 0.005;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        
+        window.addEventListener('resize', resize);
+        resize();
+
+        function step() {
+            const dx = sigma * (y - x);
+            const dy = x * (rho - z) - y;
+            const dz = x * y - beta * z;
+            
+            x += dx * dt;
+            y += dy * dt;
+            z += dz * dt;
+            
+            points.push({x, y, z});
+            if (points.length > maxPoints) points.shift();
+        }
+
+        function project(px, py, pz) {
+            // Rotate around Y axis
+            const cosY = Math.cos(rotationY);
+            const sinY = Math.sin(rotationY);
+            let rx = px * cosY - pz * sinY;
+            let rz = px * sinY + pz * cosY;
+            
+            // Rotate around X axis
+            const cosX = Math.cos(rotationX);
+            const sinX = Math.sin(rotationX);
+            let ry = py * cosX - rz * sinX;
+            rz = py * sinX + rz * cosX;
+            
+            // Project to 2D
+            const scale = zoom;
+            return {
+                x: width/2 + rx * scale,
+                y: height/2 - ry * scale + z * 0.3 * scale
+            };
+        }
+
+        function draw() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+            ctx.fillRect(0, 0, width, height);
+            
+            if (points.length < 2) return;
+            
+            ctx.beginPath();
+            const p0 = project(points[0].x, points[0].y, points[0].z);
+            ctx.moveTo(p0.x, p0.y);
+            
+            for (let i = 1; i < points.length; i++) {
+                const p = project(points[i].x, points[i].y, points[i].z);
+                const hue = (i / points.length) * 360;
+                const alpha = (i / points.length) * 0.8 + 0.2;
+                
+                ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${alpha})`;
+                ctx.lineWidth = 1 + (i / points.length) * 1.5;
+                ctx.lineTo(p.x, p.y);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+            }
+            
+            // Draw current point
+            const current = project(x, y, z);
+            ctx.beginPath();
+            ctx.arc(current.x, current.y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            
+            // Update params display
+            paramsEl.innerHTML = `σ ${sigma.toFixed(1)}<br>ρ ${rho.toFixed(1)}<br>β ${beta.toFixed(2)}`;
+        }
+
+        function animate() {
+            for (let i = 0; i < 5; i++) step();
+            draw();
+            requestAnimationFrame(animate);
+        }
+
+        // Touch handlers
+        function getTouchDist(t1, t2) {
+            const dx = t1.clientX - t2.clientX;
+            const dy = t1.clientY - t2.clientY;
+            return Math.sqrt(dx*dx + dy*dy);
+        }
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            for (const touch of e.changedTouches) {
+                touches[touch.identifier] = touch;
+            }
+            
+            const touchList = Object.values(touches);
+            if (touchList.length === 1) {
+                lastTouchX = touchList[0].clientX;
+                lastTouchY = touchList[0].clientY;
+            } else if (touchList.length === 2) {
+                lastPinchDist = getTouchDist(touchList[0], touchList[1]);
+            }
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            for (const touch of e.changedTouches) {
+                touches[touch.identifier] = touch;
+            }
+            
+            const touchList = Object.values(touches);
+            
+            if (touchList.length === 1) {
+                // Single touch: rotate
+                const dx = touchList[0].clientX - lastTouchX;
+                const dy = touchList[0].clientY - lastTouchY;
+                
+                rotationY += dx * 0.01;
+                rotationX += dy * 0.01;
+                
+                lastTouchX = touchList[0].clientX;
+                lastTouchY = touchList[0].clientY;
+            } else if (touchList.length === 2) {
+                // Pinch: zoom
+                const dist = getTouchDist(touchList[0], touchList[1]);
+                const delta = dist - lastPinchDist;
+                zoom = Math.max(3, Math.min(30, zoom + delta * 0.05));
+                lastPinchDist = dist;
+                
+                // Two-finger vertical: adjust rho (chaos parameter)
+                const avgY = (touchList[0].clientY + touchList[1].clientY) / 2;
+                const lastAvgY = lastTouchY;
+                rho = Math.max(0, Math.min(50, rho - (avgY - lastAvgY) * 0.05));
+                lastTouchY = avgY;
+            } else if (touchList.length === 3) {
+                // Three fingers: adjust sigma
+                const avgX = touchList.reduce((s, t) => s + t.clientX, 0) / 3;
+                sigma = Math.max(1, Math.min(20, sigma + (avgX - lastTouchX) * 0.02));
+                lastTouchX = avgX;
+            }
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            for (const touch of e.changedTouches) {
+                delete touches[touch.identifier];
+            }
+            
+            // Double-tap to reset
+            if (e.changedTouches.length === 1 && Object.keys(touches).length === 0) {
+                const now = Date.now();
+                if (now - (canvas.lastTap || 0) < 300) {
+                    // Reset
+                    x = 0.1; y = 0; z = 0;
+                    points = [];
+                    sigma = 10; rho = 28; beta = 8/3;
+                    rotationX = 0.5; rotationY = 0; zoom = 12;
+                }
+                canvas.lastTap = now;
+            }
+        });
+
+        // Mouse controls for desktop
+        let isDragging = false;
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            lastTouchX = e.clientX;
+            lastTouchY = e.clientY;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const dx = e.clientX - lastTouchX;
+            const dy = e.clientY - lastTouchY;
+            rotationY += dx * 0.01;
+            rotationX += dy * 0.01;
+            lastTouchX = e.clientX;
+            lastTouchY = e.clientY;
+        });
+
+        canvas.addEventListener('mouseup', () => isDragging = false);
+        canvas.addEventListener('mouseleave', () => isDragging = false);
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            zoom = Math.max(3, Math.min(30, zoom - e.deltaY * 0.01));
+        });
+
+        animate();
+    </script>
+</body>
+</html>
