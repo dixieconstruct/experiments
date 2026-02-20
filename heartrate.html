@@ -621,34 +621,54 @@
             
             // Clear overlay for next frame (or show amplified if enabled)
             if (amplifyMode && currentFace) {
-                // Simplified Eulerian magnification - amplify color changes
-                const ampFactor = 50; // How much to amplify
+                // Temporal bandpass amplification (only amplify heartbeat frequencies)
+                const ampFactor = 30;
                 
-                // Store current frame colors in buffer
-                colorBuffer.push(imageData);
-                if (colorBuffer.length > COLOR_BUFFER_SIZE) colorBuffer.shift();
+                // Store per-pixel green channel history (downsampled for performance)
+                if (!window.pixelHistory) {
+                    window.pixelHistory = [];
+                    window.pixelHistorySize = 20;
+                }
                 
-                if (colorBuffer.length >= 10) {
-                    // Compute temporal average
-                    const avg = new Float32Array(imageData.data.length);
-                    for (const frame of colorBuffer) {
-                        for (let i = 0; i < frame.data.length; i++) {
-                            avg[i] += frame.data[i] / colorBuffer.length;
-                        }
+                // Downsample: only track every 8th pixel
+                const step = 8;
+                const historyFrame = [];
+                for (let y = 0; y < containerH; y += step) {
+                    for (let x = 0; x < containerW; x += step) {
+                        const idx = (y * containerW + x) * 4;
+                        historyFrame.push(imageData.data[idx + 1]); // Green channel
                     }
-                    
-                    // Amplify difference from average (bandpass would be better but this works)
+                }
+                window.pixelHistory.push(historyFrame);
+                if (window.pixelHistory.length > window.pixelHistorySize) {
+                    window.pixelHistory.shift();
+                }
+                
+                if (window.pixelHistory.length >= 10) {
                     const amplified = overlayCtx.createImageData(containerW, containerH);
-                    for (let i = 0; i < imageData.data.length; i += 4) {
-                        // Amplify green channel most (best for PPG)
-                        const diffR = (imageData.data[i] - avg[i]) * ampFactor * 0.5;
-                        const diffG = (imageData.data[i + 1] - avg[i + 1]) * ampFactor;
-                        const diffB = (imageData.data[i + 2] - avg[i + 2]) * ampFactor * 0.5;
-                        
-                        amplified.data[i] = Math.max(0, Math.min(255, imageData.data[i] + diffR));
-                        amplified.data[i + 1] = Math.max(0, Math.min(255, imageData.data[i + 1] + diffG));
-                        amplified.data[i + 2] = Math.max(0, Math.min(255, imageData.data[i + 2] + diffB));
-                        amplified.data[i + 3] = 255;
+                    let histIdx = 0;
+                    
+                    for (let y = 0; y < containerH; y += step) {
+                        for (let x = 0; x < containerW; x += step) {
+                            // Get temporal signal for this pixel
+                            const pixelSignal = window.pixelHistory.map(f => f[histIdx]);
+                            
+                            // Simple bandpass: subtract slow average
+                            const slowAvg = pixelSignal.reduce((a, b) => a + b, 0) / pixelSignal.length;
+                            const filtered = pixelSignal[pixelSignal.length - 1] - slowAvg;
+                            
+                            // Apply amplification to block
+                            for (let dy = 0; dy < step && y + dy < containerH; dy++) {
+                                for (let dx = 0; dx < step && x + dx < containerW; dx++) {
+                                    const srcIdx = ((y + dy) * containerW + (x + dx)) * 4;
+                                    amplified.data[srcIdx] = Math.max(0, Math.min(255, imageData.data[srcIdx] + filtered * ampFactor * 0.3));
+                                    amplified.data[srcIdx + 1] = Math.max(0, Math.min(255, imageData.data[srcIdx + 1] + filtered * ampFactor));
+                                    amplified.data[srcIdx + 2] = Math.max(0, Math.min(255, imageData.data[srcIdx + 2] + filtered * ampFactor * 0.3));
+                                    amplified.data[srcIdx + 3] = 255;
+                                }
+                            }
+                            histIdx++;
+                        }
                     }
                     
                     overlayCtx.putImageData(amplified, 0, 0);
@@ -657,6 +677,7 @@
                 }
             } else {
                 overlayCtx.clearRect(0, 0, containerW, containerH);
+                if (window.pixelHistory) window.pixelHistory = [];
             }
             
             drawSignal();
@@ -706,35 +727,43 @@
             // Find BPM using autocorrelation (more robust than peak detection)
             const bpm = estimateBPMAutocorr(filteredSignal, sampleRate);
             
-            if (bpm && bpm >= 42 && bpm <= 200) {
+            if (bpm && bpm >= 50 && bpm <= 120) {
                 bpmHistory.push(bpm);
-                if (bpmHistory.length > 10) bpmHistory.shift();
+                if (bpmHistory.length > 15) bpmHistory.shift();
                 
-                // Median filter for stability
-                const sorted = [...bpmHistory].sort((a, b) => a - b);
-                const median = sorted[Math.floor(sorted.length / 2)];
-                
-                if (currentBPM === null) {
-                    currentBPM = median;
-                } else {
-                    currentBPM = currentBPM * (1 - BPM_SMOOTHING) + median * BPM_SMOOTHING;
-                }
-                
-                bpmDisplay.innerHTML = Math.round(currentBPM) + ' <span>BPM</span>';
-                
-                // Confidence based on signal quality
-                const variance = calcVariance(bpmHistory);
-                const cv = Math.sqrt(variance) / (currentBPM || 1);
-                
-                if (cv < 0.05) {
-                    bpmDisplay.className = 'stable';
-                    statusEl.textContent = '● High confidence';
-                } else if (cv < 0.15) {
-                    bpmDisplay.className = 'detecting';
-                    statusEl.textContent = '● Detecting...';
-                } else {
-                    bpmDisplay.className = '';
-                    statusEl.textContent = '● Low confidence';
+                // Only update if we have enough samples and they're consistent
+                if (bpmHistory.length >= 5) {
+                    // Median filter for stability
+                    const sorted = [...bpmHistory].sort((a, b) => a - b);
+                    const median = sorted[Math.floor(sorted.length / 2)];
+                    
+                    // Check if readings are consistent (IQR check)
+                    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+                    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+                    const iqr = q3 - q1;
+                    
+                    if (iqr < 15) { // Readings are consistent
+                        if (currentBPM === null) {
+                            currentBPM = median;
+                        } else {
+                            currentBPM = currentBPM * 0.85 + median * 0.15; // Slower smoothing
+                        }
+                        
+                        bpmDisplay.innerHTML = Math.round(currentBPM) + ' <span>BPM</span>';
+                        
+                        if (iqr < 5) {
+                            bpmDisplay.className = 'stable';
+                            statusEl.textContent = '● High confidence';
+                        } else if (iqr < 10) {
+                            bpmDisplay.className = 'detecting';
+                            statusEl.textContent = '● Medium confidence';
+                        } else {
+                            bpmDisplay.className = '';
+                            statusEl.textContent = '● Low confidence';
+                        }
+                    } else {
+                        statusEl.textContent = '● Stabilizing...';
+                    }
                 }
             }
         }
