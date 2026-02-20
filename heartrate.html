@@ -622,7 +622,7 @@
             // Clear overlay for next frame (or show amplified if enabled)
             if (amplifyMode && currentFace) {
                 // Simplified Eulerian magnification with spatial smoothing
-                const ampFactor = 25;
+                const ampFactor = 80; // Increased amplification
                 
                 // Track temporal changes at reduced resolution
                 if (!window.ampBuffer) {
@@ -655,12 +655,14 @@
                 }
                 
                 if (window.ampBuffer.frames.length >= 8) {
-                    // Compute amplification per block
+                    // Compute amplification per block with bandpass
                     const ampMap = new Float32Array(cols * rows);
                     for (let i = 0; i < cols * rows; i++) {
                         const history = window.ampBuffer.frames.map(f => f[i]);
-                        const mean = history.reduce((a, b) => a + b, 0) / history.length;
-                        ampMap[i] = (history[history.length - 1] - mean) * ampFactor;
+                        // Bandpass: remove DC (slow changes) and high freq (noise)
+                        const slowAvg = history.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
+                        const fastAvg = history.slice(-3).reduce((a, b) => a + b, 0) / 3;
+                        ampMap[i] = (fastAvg - slowAvg);
                     }
                     
                     // Apply with bilinear interpolation for smooth result
@@ -684,9 +686,10 @@
                                 ampMap[y1 * cols + x1] * fx * fy;
                             
                             const srcIdx = (y * containerW + x) * 4;
-                            amplified.data[srcIdx] = Math.max(0, Math.min(255, imageData.data[srcIdx] + amp * 0.3));
-                            amplified.data[srcIdx + 1] = Math.max(0, Math.min(255, imageData.data[srcIdx + 1] + amp));
-                            amplified.data[srcIdx + 2] = Math.max(0, Math.min(255, imageData.data[srcIdx + 2] + amp * 0.3));
+                            // Color mode: amplify as green/red shift (like blood flush)
+                            amplified.data[srcIdx] = Math.max(0, Math.min(255, imageData.data[srcIdx] - amp * ampFactor * 0.5)); // Less red when blood
+                            amplified.data[srcIdx + 1] = Math.max(0, Math.min(255, imageData.data[srcIdx + 1] + amp * ampFactor)); // More green
+                            amplified.data[srcIdx + 2] = Math.max(0, Math.min(255, imageData.data[srcIdx + 2] - amp * ampFactor * 0.3)); // Less blue
                             amplified.data[srcIdx + 3] = 255;
                         }
                     }
