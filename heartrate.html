@@ -621,89 +621,102 @@
             
             // Clear overlay for next frame (or show amplified if enabled)
             if (amplifyMode && currentFace && smoothedROI) {
-                // Simplified Eulerian magnification - only on face region
-                const ampFactor = 60;
+                // Eulerian-style magnification - only on forehead ROI
+                const ampFactor = 150; // Much higher amplification
                 
-                // Get face bounds (with some padding)
-                const faceLeft = Math.max(0, smoothedROI.faceX - 20);
-                const faceTop = Math.max(0, smoothedROI.faceY - 40);
-                const faceRight = Math.min(containerW, smoothedROI.faceX + smoothedROI.faceW + 20);
-                const faceBottom = Math.min(containerH, smoothedROI.faceY + smoothedROI.faceH + 20);
+                // Get ROI bounds
+                const roiLeft = Math.max(0, Math.floor(smoothedROI.x));
+                const roiTop = Math.max(0, Math.floor(smoothedROI.y));
+                const roiRight = Math.min(containerW, Math.floor(smoothedROI.x + smoothedROI.width));
+                const roiBottom = Math.min(containerH, Math.floor(smoothedROI.y + smoothedROI.height));
                 
-                // Track temporal changes at reduced resolution
+                // Track temporal green channel in ROI only
                 if (!window.ampBuffer) {
-                    window.ampBuffer = { frames: [], size: 15 };
+                    window.ampBuffer = { pixels: [], size: 30 }; // Longer history for better filtering
                 }
                 
-                // Downsample heavily for performance (16x16 blocks)
-                const blockSize = 16;
-                const cols = Math.ceil(containerW / blockSize);
-                const rows = Math.ceil(containerH / blockSize);
-                const frame = new Float32Array(cols * rows);
+                // Sample ROI pixels (8x8 grid within ROI)
+                const gridSize = 8;
+                const cellW = (roiRight - roiLeft) / gridSize;
+                const cellH = (roiBottom - roiTop) / gridSize;
+                const frame = new Float32Array(gridSize * gridSize);
                 
-                for (let by = 0; by < rows; by++) {
-                    for (let bx = 0; bx < cols; bx++) {
+                for (let gy = 0; gy < gridSize; gy++) {
+                    for (let gx = 0; gx < gridSize; gx++) {
                         let sum = 0, count = 0;
-                        for (let dy = 0; dy < blockSize && by * blockSize + dy < containerH; dy++) {
-                            for (let dx = 0; dx < blockSize && bx * blockSize + dx < containerW; dx++) {
-                                const idx = ((by * blockSize + dy) * containerW + (bx * blockSize + dx)) * 4;
-                                sum += imageData.data[idx + 1]; // Green
+                        const startX = Math.floor(roiLeft + gx * cellW);
+                        const startY = Math.floor(roiTop + gy * cellH);
+                        const endX = Math.floor(roiLeft + (gx + 1) * cellW);
+                        const endY = Math.floor(roiTop + (gy + 1) * cellH);
+                        
+                        for (let y = startY; y < endY; y++) {
+                            for (let x = startX; x < endX; x++) {
+                                const idx = (y * containerW + x) * 4;
+                                sum += imageData.data[idx + 1]; // Green channel
                                 count++;
                             }
                         }
-                        frame[by * cols + bx] = sum / count;
+                        frame[gy * gridSize + gx] = count > 0 ? sum / count : 0;
                     }
                 }
                 
-                window.ampBuffer.frames.push(frame);
-                if (window.ampBuffer.frames.length > window.ampBuffer.size) {
-                    window.ampBuffer.frames.shift();
+                window.ampBuffer.pixels.push(frame);
+                if (window.ampBuffer.pixels.length > window.ampBuffer.size) {
+                    window.ampBuffer.pixels.shift();
                 }
                 
-                if (window.ampBuffer.frames.length >= 8) {
-                    // Compute amplification per block with bandpass
-                    const ampMap = new Float32Array(cols * rows);
-                    for (let i = 0; i < cols * rows; i++) {
-                        const history = window.ampBuffer.frames.map(f => f[i]);
-                        // Bandpass: remove DC (slow changes) and high freq (noise)
-                        const slowAvg = history.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
-                        const fastAvg = history.slice(-3).reduce((a, b) => a + b, 0) / 3;
-                        ampMap[i] = (fastAvg - slowAvg);
+                if (window.ampBuffer.pixels.length >= 15) {
+                    // IIR bandpass filter for each cell (0.7-2.5 Hz at ~30fps)
+                    const ampMap = new Float32Array(gridSize * gridSize);
+                    
+                    for (let i = 0; i < gridSize * gridSize; i++) {
+                        const history = window.ampBuffer.pixels.map(f => f[i]);
+                        
+                        // Simple bandpass: difference of moving averages
+                        // Fast average (last 3 frames) - Slow average (last 15 frames)
+                        const slow = history.reduce((a, b) => a + b, 0) / history.length;
+                        const fast = history.slice(-4).reduce((a, b) => a + b, 0) / 4;
+                        const mid = history.slice(-8, -2).reduce((a, b) => a + b, 0) / 6;
+                        
+                        // Bandpass: want changes in 0.7-2.5Hz range
+                        // This approximates: current - slow_trend, but also removing very fast noise
+                        ampMap[i] = (fast - slow) * 0.7 + (mid - slow) * 0.3;
                     }
                     
-                    // Apply with bilinear interpolation - ONLY within face region
+                    // Apply amplification with smooth interpolation within ROI
                     const amplified = overlayCtx.createImageData(containerW, containerH);
+                    
                     for (let y = 0; y < containerH; y++) {
                         for (let x = 0; x < containerW; x++) {
                             const srcIdx = (y * containerW + x) * 4;
                             
-                            // Check if inside face region
-                            const inFace = x >= faceLeft && x <= faceRight && y >= faceTop && y <= faceBottom;
+                            // Check if inside ROI
+                            const inROI = x >= roiLeft && x < roiRight && y >= roiTop && y < roiBottom;
                             
-                            if (inFace) {
-                                // Bilinear interpolation of amplification
-                                const bx = x / blockSize - 0.5;
-                                const by = y / blockSize - 0.5;
-                                const x0 = Math.max(0, Math.floor(bx));
-                                const y0 = Math.max(0, Math.floor(by));
-                                const x1 = Math.min(cols - 1, x0 + 1);
-                                const y1 = Math.min(rows - 1, y0 + 1);
-                                const fx = bx - x0;
-                                const fy = by - y0;
+                            if (inROI) {
+                                // Bilinear interpolation within grid
+                                const gx = ((x - roiLeft) / cellW) - 0.5;
+                                const gy = ((y - roiTop) / cellH) - 0.5;
+                                const x0 = Math.max(0, Math.floor(gx));
+                                const y0 = Math.max(0, Math.floor(gy));
+                                const x1 = Math.min(gridSize - 1, x0 + 1);
+                                const y1 = Math.min(gridSize - 1, y0 + 1);
+                                const fx = Math.max(0, gx - x0);
+                                const fy = Math.max(0, gy - y0);
                                 
                                 const amp = 
-                                    ampMap[y0 * cols + x0] * (1 - fx) * (1 - fy) +
-                                    ampMap[y0 * cols + x1] * fx * (1 - fy) +
-                                    ampMap[y1 * cols + x0] * (1 - fx) * fy +
-                                    ampMap[y1 * cols + x1] * fx * fy;
+                                    ampMap[y0 * gridSize + x0] * (1 - fx) * (1 - fy) +
+                                    ampMap[y0 * gridSize + x1] * fx * (1 - fy) +
+                                    ampMap[y1 * gridSize + x0] * (1 - fx) * fy +
+                                    ampMap[y1 * gridSize + x1] * fx * fy;
                                 
-                                // Subtle color shift: amplify as slight red/pink flush
+                                // Amplify as red flush (blood = more red absorption = redder skin)
                                 const colorAmp = amp * ampFactor;
-                                amplified.data[srcIdx] = Math.max(0, Math.min(255, imageData.data[srcIdx] + colorAmp * 0.8));
-                                amplified.data[srcIdx + 1] = Math.max(0, Math.min(255, imageData.data[srcIdx + 1] + colorAmp * 0.2));
-                                amplified.data[srcIdx + 2] = Math.max(0, Math.min(255, imageData.data[srcIdx + 2] + colorAmp * 0.3));
+                                amplified.data[srcIdx] = Math.max(0, Math.min(255, imageData.data[srcIdx] + colorAmp));
+                                amplified.data[srcIdx + 1] = Math.max(0, Math.min(255, imageData.data[srcIdx + 1] - colorAmp * 0.2));
+                                amplified.data[srcIdx + 2] = Math.max(0, Math.min(255, imageData.data[srcIdx + 2] - colorAmp * 0.3));
                             } else {
-                                // Outside face: copy original
+                                // Outside ROI: copy original
                                 amplified.data[srcIdx] = imageData.data[srcIdx];
                                 amplified.data[srcIdx + 1] = imageData.data[srcIdx + 1];
                                 amplified.data[srcIdx + 2] = imageData.data[srcIdx + 2];
@@ -718,7 +731,7 @@
                 }
             } else {
                 overlayCtx.clearRect(0, 0, containerW, containerH);
-                if (window.ampBuffer) window.ampBuffer.frames = [];
+                if (window.ampBuffer) window.ampBuffer.pixels = [];
             }
             
             drawSignal();
