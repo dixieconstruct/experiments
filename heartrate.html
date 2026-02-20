@@ -728,19 +728,14 @@
                 
                 if (cv < 0.05) {
                     bpmDisplay.className = 'stable';
-                    confidenceEl.textContent = '● High confidence';
-                    confidenceEl.style.color = '#6bff6b';
+                    statusEl.textContent = '● High confidence';
                 } else if (cv < 0.15) {
                     bpmDisplay.className = 'detecting';
-                    confidenceEl.textContent = '● Detecting...';
-                    confidenceEl.style.color = '#ffaa6b';
+                    statusEl.textContent = '● Detecting...';
                 } else {
                     bpmDisplay.className = '';
-                    confidenceEl.textContent = '● Low confidence';
-                    confidenceEl.style.color = '#ff6b6b';
+                    statusEl.textContent = '● Low confidence';
                 }
-                
-                statusEl.textContent = `Sample rate: ${sampleRate.toFixed(1)} Hz`;
             }
         }
         
