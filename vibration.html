@@ -166,6 +166,7 @@
     <div class="controls">
         <button id="reset-btn">Reset</button>
         <button id="lock-btn">🔒 Lock</button>
+        <button id="amplify-btn">🔍 Amplify</button>
     </div>
 
     <script>
@@ -183,6 +184,7 @@
         const instructions = document.getElementById('instructions');
         const resetBtn = document.getElementById('reset-btn');
         const lockBtn = document.getElementById('lock-btn');
+        const amplifyBtn = document.getElementById('amplify-btn');
         const videoContainer = document.getElementById('video-container');
         
         let stream = null;
@@ -190,6 +192,9 @@
         let prevFrame = null;
         let motionSignal = [];
         let locked = false;
+        let amplifyMode = false;
+        let frameBuffer = []; // Store recent frames for temporal filtering
+        const FRAME_BUFFER_SIZE = 10;
         
         // ROI position (normalized 0-1)
         let roi = { x: 0.35, y: 0.35, w: 0.3, h: 0.3 };
@@ -309,10 +314,18 @@
         resetBtn.addEventListener('click', () => {
             motionSignal = [];
             prevFrame = null;
+            frameBuffer = [];
             freqDisplay.innerHTML = '-- <span>Hz</span>';
             noteDisplay.textContent = '--';
             roi = { x: 0.35, y: 0.35, w: 0.3, h: 0.3 };
             updateROIBox();
+        });
+        
+        // Amplify toggle
+        amplifyBtn.addEventListener('click', () => {
+            amplifyMode = !amplifyMode;
+            amplifyBtn.classList.toggle('active', amplifyMode);
+            frameBuffer = [];
         });
         
         // Tap to start
@@ -369,13 +382,59 @@
                 if (motionSignal.length >= 64) {
                     analyzeFrequency();
                 }
+                
+                // Motion amplification
+                if (amplifyMode) {
+                    // Store frame in buffer
+                    frameBuffer.push(new Uint8ClampedArray(imageData.data));
+                    if (frameBuffer.length > FRAME_BUFFER_SIZE) {
+                        frameBuffer.shift();
+                    }
+                    
+                    if (frameBuffer.length >= 3) {
+                        // Compute temporal difference (current - average of past)
+                        const ampFactor = 25; // Amplification strength
+                        const amplified = ctx.createImageData(roiW, roiH);
+                        
+                        // Calculate mean of older frames
+                        for (let i = 0; i < imageData.data.length; i += 4) {
+                            // Average of older frames (excluding most recent)
+                            let avgR = 0, avgG = 0, avgB = 0;
+                            const oldFrames = frameBuffer.slice(0, -1);
+                            for (const frame of oldFrames) {
+                                avgR += frame[i];
+                                avgG += frame[i + 1];
+                                avgB += frame[i + 2];
+                            }
+                            avgR /= oldFrames.length;
+                            avgG /= oldFrames.length;
+                            avgB /= oldFrames.length;
+                            
+                            // Difference from average (the motion)
+                            const diffR = imageData.data[i] - avgR;
+                            const diffG = imageData.data[i + 1] - avgG;
+                            const diffB = imageData.data[i + 2] - avgB;
+                            
+                            // Amplify the difference and add back to current frame
+                            amplified.data[i] = Math.max(0, Math.min(255, imageData.data[i] + diffR * ampFactor));
+                            amplified.data[i + 1] = Math.max(0, Math.min(255, imageData.data[i + 1] + diffG * ampFactor));
+                            amplified.data[i + 2] = Math.max(0, Math.min(255, imageData.data[i + 2] + diffB * ampFactor));
+                            amplified.data[i + 3] = 255;
+                        }
+                        
+                        // Draw amplified ROI back
+                        ctx.putImageData(amplified, roiX, roiY);
+                    }
+                }
             }
             
             // Store current frame
             prevFrame = new Uint8ClampedArray(imageData.data);
             
-            // Clear overlay (we're using the video element directly now)
-            ctx.clearRect(0, 0, w, h);
+            // Clear overlay only if not amplifying (amplify draws to overlay)
+            if (!amplifyMode) {
+                ctx.clearRect(0, 0, w, h);
+            }
             
             drawMotionGraph();
             requestAnimationFrame(processFrame);
