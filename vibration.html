@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Vibration Analyzer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 5px; font-size: 1.4em; }
+        .subtitle { color: #666; font-size: 0.8em; margin-bottom: 10px; }
+        
+        #video-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            aspect-ratio: 4/3;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        video, #overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+        }
+        video { transform: scaleX(-1); }
+        #overlay { pointer-events: none; }
+        
+        #roi-box {
+            position: absolute;
+            border: 2px solid #6bf;
+            background: rgba(100, 180, 255, 0.15);
+            border-radius: 4px;
+            cursor: move;
+            box-shadow: 0 0 10px rgba(100, 180, 255, 0.3);
+        }
+        
+        #freq-display {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #6bf;
+            text-shadow: 0 0 20px rgba(100, 180, 255, 0.5);
+            margin: 5px 0;
+        }
+        #freq-display span { font-size: 0.4em; color: #888; }
+        
+        #note-display {
+            font-size: 1.2em;
+            color: #6f6;
+            margin-bottom: 10px;
+        }
+        
+        .graph-container {
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 10px;
+        }
+        .graph-container canvas {
+            width: 100%;
+            height: 70px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 8px;
+        }
+        .graph-label {
+            font-size: 0.7em;
+            color: #666;
+            margin-bottom: 2px;
+        }
+        
+        #status {
+            color: #888;
+            font-size: 0.8em;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        button {
+            background: rgba(100, 180, 255, 0.2);
+            border: 1px solid rgba(100, 180, 255, 0.5);
+            color: #6bf;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.85em;
+            cursor: pointer;
+        }
+        button:hover { background: rgba(100, 180, 255, 0.3); }
+        button.active { background: rgba(100, 255, 180, 0.2); border-color: #6f6; color: #6f6; }
+        
+        #instructions {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.85);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+        #instructions.hidden { display: none; }
+        
+        .back-link {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            color: #666;
+            text-decoration: none;
+            font-size: 1.5em;
+        }
+        
+        .range-info {
+            font-size: 0.7em;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">←</a>
+    <h1>〰️ Vibration Analyzer</h1>
+    <p class="subtitle">Point at a vibrating object</p>
+    
+    <div id="video-container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="roi-box"></div>
+        <div id="instructions">
+            <p>Tap to start camera</p>
+            <p style="font-size:0.8em; color:#888; margin-top:8px;">Then drag blue box to vibrating object</p>
+        </div>
+    </div>
+    
+    <div id="freq-display">-- <span>Hz</span></div>
+    <div id="note-display">--</div>
+    
+    <div class="graph-container">
+        <div class="graph-label">Motion Signal</div>
+        <canvas id="motion-canvas"></canvas>
+    </div>
+    
+    <div class="graph-container">
+        <div class="graph-label">Frequency Spectrum (FFT)</div>
+        <canvas id="fft-canvas"></canvas>
+    </div>
+    
+    <div id="status">Tap to start</div>
+    <p class="range-info">Detection range: 1-500 Hz</p>
+    
+    <div class="controls">
+        <button id="reset-btn">Reset</button>
+        <button id="lock-btn">🔒 Lock</button>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const ctx = overlay.getContext('2d', { willReadFrequently: true });
+        const motionCanvas = document.getElementById('motion-canvas');
+        const motionCtx = motionCanvas.getContext('2d');
+        const fftCanvas = document.getElementById('fft-canvas');
+        const fftCtx = fftCanvas.getContext('2d');
+        const freqDisplay = document.getElementById('freq-display');
+        const noteDisplay = document.getElementById('note-display');
+        const statusEl = document.getElementById('status');
+        const roiBox = document.getElementById('roi-box');
+        const instructions = document.getElementById('instructions');
+        const resetBtn = document.getElementById('reset-btn');
+        const lockBtn = document.getElementById('lock-btn');
+        const videoContainer = document.getElementById('video-container');
+        
+        let stream = null;
+        let isRunning = false;
+        let prevFrame = null;
+        let motionSignal = [];
+        let locked = false;
+        
+        // ROI position (normalized 0-1)
+        let roi = { x: 0.35, y: 0.35, w: 0.3, h: 0.3 };
+        
+        const BUFFER_SIZE = 512; // Power of 2 for FFT
+        const TARGET_FPS = 60;
+        
+        // Musical note detection
+        const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        function freqToNote(freq) {
+            if (freq < 20 || freq > 5000) return '--';
+            const semitones = 12 * Math.log2(freq / 440);
+            const noteNum = Math.round(semitones) + 69;
+            const octave = Math.floor(noteNum / 12) - 1;
+            const note = NOTES[noteNum % 12];
+            const cents = Math.round((semitones - Math.round(semitones)) * 100);
+            const centsStr = cents >= 0 ? `+${cents}` : `${cents}`;
+            return `${note}${octave} (${centsStr}¢)`;
+        }
+        
+        // Resize canvases
+        function resizeCanvases() {
+            const rect = videoContainer.getBoundingClientRect();
+            overlay.width = rect.width;
+            overlay.height = rect.height;
+            motionCanvas.width = motionCanvas.parentElement.clientWidth;
+            motionCanvas.height = 70;
+            fftCanvas.width = fftCanvas.parentElement.clientWidth;
+            fftCanvas.height = 70;
+            updateROIBox();
+        }
+        window.addEventListener('resize', resizeCanvases);
+        
+        function updateROIBox() {
+            const rect = videoContainer.getBoundingClientRect();
+            roiBox.style.left = (roi.x * rect.width) + 'px';
+            roiBox.style.top = (roi.y * rect.height) + 'px';
+            roiBox.style.width = (roi.w * rect.width) + 'px';
+            roiBox.style.height = (roi.h * rect.height) + 'px';
+        }
+        
+        // Draggable ROI
+        let dragging = false;
+        let dragStart = { x: 0, y: 0 };
+        
+        roiBox.addEventListener('mousedown', startDrag);
+        roiBox.addEventListener('touchstart', startDrag);
+        document.addEventListener('mousemove', doDrag);
+        document.addEventListener('touchmove', doDrag);
+        document.addEventListener('mouseup', endDrag);
+        document.addEventListener('touchend', endDrag);
+        
+        function startDrag(e) {
+            if (locked) return;
+            e.preventDefault();
+            dragging = true;
+            const touch = e.touches ? e.touches[0] : e;
+            dragStart = { x: touch.clientX, y: touch.clientY };
+        }
+        
+        function doDrag(e) {
+            if (!dragging || locked) return;
+            const touch = e.touches ? e.touches[0] : e;
+            const rect = videoContainer.getBoundingClientRect();
+            const dx = (touch.clientX - dragStart.x) / rect.width;
+            const dy = (touch.clientY - dragStart.y) / rect.height;
+            
+            roi.x = Math.max(0, Math.min(1 - roi.w, roi.x + dx));
+            roi.y = Math.max(0, Math.min(1 - roi.h, roi.y + dy));
+            
+            dragStart = { x: touch.clientX, y: touch.clientY };
+            updateROIBox();
+        }
+        
+        function endDrag() {
+            dragging = false;
+        }
+        
+        // Start camera
+        async function startCamera() {
+            try {
+                statusEl.textContent = 'Starting camera...';
+                
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: 'environment',  // Back camera for pointing at objects
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 60 }  // Higher FPS = higher frequency detection
+                    }
+                });
+                
+                video.srcObject = stream;
+                await video.play();
+                
+                instructions.classList.add('hidden');
+                resizeCanvases();
+                isRunning = true;
+                statusEl.textContent = 'Drag blue box to vibrating object';
+                
+                requestAnimationFrame(processFrame);
+                
+            } catch (err) {
+                statusEl.textContent = 'Camera error: ' + err.message;
+                console.error(err);
+            }
+        }
+        
+        // Lock toggle
+        lockBtn.addEventListener('click', () => {
+            locked = !locked;
+            lockBtn.classList.toggle('active', locked);
+            lockBtn.textContent = locked ? '🔓 Unlock' : '🔒 Lock';
+        });
+        
+        // Reset
+        resetBtn.addEventListener('click', () => {
+            motionSignal = [];
+            prevFrame = null;
+            freqDisplay.innerHTML = '-- <span>Hz</span>';
+            noteDisplay.textContent = '--';
+            roi = { x: 0.35, y: 0.35, w: 0.3, h: 0.3 };
+            updateROIBox();
+        });
+        
+        // Tap to start
+        videoContainer.addEventListener('click', (e) => {
+            if (!stream && !e.target.closest('#roi-box')) {
+                startCamera();
+            }
+        });
+        
+        // Process frame
+        let lastTime = performance.now();
+        let actualFPS = 60;
+        
+        function processFrame() {
+            if (!isRunning) return;
+            
+            const now = performance.now();
+            const delta = now - lastTime;
+            actualFPS = actualFPS * 0.95 + (1000 / delta) * 0.05;
+            lastTime = now;
+            
+            const w = overlay.width;
+            const h = overlay.height;
+            
+            // Draw video to canvas (mirrored)
+            ctx.save();
+            ctx.translate(w, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, w, h);
+            ctx.restore();
+            
+            // Get current frame
+            const roiX = Math.floor(roi.x * w);
+            const roiY = Math.floor(roi.y * h);
+            const roiW = Math.floor(roi.w * w);
+            const roiH = Math.floor(roi.h * h);
+            
+            const imageData = ctx.getImageData(roiX, roiY, roiW, roiH);
+            
+            if (prevFrame && prevFrame.length === imageData.data.length) {
+                // Compute motion (sum of absolute differences)
+                let motion = 0;
+                for (let i = 0; i < imageData.data.length; i += 4) {
+                    // Use green channel (usually least noisy)
+                    motion += Math.abs(imageData.data[i + 1] - prevFrame[i + 1]);
+                }
+                motion /= (roiW * roiH); // Normalize
+                
+                motionSignal.push(motion);
+                if (motionSignal.length > BUFFER_SIZE) {
+                    motionSignal.shift();
+                }
+                
+                if (motionSignal.length >= 64) {
+                    analyzeFrequency();
+                }
+            }
+            
+            // Store current frame
+            prevFrame = new Uint8ClampedArray(imageData.data);
+            
+            // Clear overlay (we're using the video element directly now)
+            ctx.clearRect(0, 0, w, h);
+            
+            drawMotionGraph();
+            requestAnimationFrame(processFrame);
+        }
+        
+        // FFT implementation
+        function fft(signal) {
+            const n = signal.length;
+            if (n <= 1) return signal.map(x => ({ re: x, im: 0 }));
+            
+            // Pad to power of 2
+            const size = Math.pow(2, Math.ceil(Math.log2(n)));
+            const padded = new Array(size).fill(0);
+            for (let i = 0; i < n; i++) padded[i] = signal[i];
+            
+            return fftRecursive(padded);
+        }
+        
+        function fftRecursive(signal) {
+            const n = signal.length;
+            if (n <= 1) return [{ re: signal[0] || 0, im: 0 }];
+            
+            const even = [], odd = [];
+            for (let i = 0; i < n; i++) {
+                (i % 2 === 0 ? even : odd).push(signal[i]);
+            }
+            
+            const evenFFT = fftRecursive(even);
+            const oddFFT = fftRecursive(odd);
+            
+            const result = new Array(n);
+            for (let k = 0; k < n / 2; k++) {
+                const angle = -2 * Math.PI * k / n;
+                const twiddle = { re: Math.cos(angle), im: Math.sin(angle) };
+                const t = {
+                    re: twiddle.re * oddFFT[k].re - twiddle.im * oddFFT[k].im,
+                    im: twiddle.re * oddFFT[k].im + twiddle.im * oddFFT[k].re
+                };
+                result[k] = { re: evenFFT[k].re + t.re, im: evenFFT[k].im + t.im };
+                result[k + n/2] = { re: evenFFT[k].re - t.re, im: evenFFT[k].im - t.im };
+            }
+            return result;
+        }
+        
+        // Analyze frequency
+        let lastSpectrum = null;
+        let detectedFreq = null;
+        
+        function analyzeFrequency() {
+            // Detrend signal
+            const mean = motionSignal.reduce((a, b) => a + b, 0) / motionSignal.length;
+            const detrended = motionSignal.map(x => x - mean);
+            
+            // Apply Hanning window
+            const windowed = detrended.map((x, i) => {
+                const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / detrended.length));
+                return x * window;
+            });
+            
+            // FFT
+            const spectrum = fft(windowed);
+            const magnitudes = spectrum.slice(0, spectrum.length / 2).map(c => 
+                Math.sqrt(c.re * c.re + c.im * c.im)
+            );
+            
+            lastSpectrum = magnitudes;
+            
+            // Find peak (skip DC and very low frequencies)
+            const minBin = Math.floor(1 * magnitudes.length / (actualFPS / 2)); // 1 Hz min
+            const maxBin = Math.min(magnitudes.length - 1, Math.floor(500 * magnitudes.length / (actualFPS / 2))); // 500 Hz max
+            
+            let peakBin = minBin;
+            let peakMag = 0;
+            
+            for (let i = minBin; i <= maxBin; i++) {
+                if (magnitudes[i] > peakMag) {
+                    peakMag = magnitudes[i];
+                    peakBin = i;
+                }
+            }
+            
+            // Convert bin to frequency
+            const freq = peakBin * actualFPS / magnitudes.length / 2;
+            
+            // Only update if significant peak
+            const avgMag = magnitudes.slice(minBin, maxBin).reduce((a, b) => a + b, 0) / (maxBin - minBin);
+            
+            if (peakMag > avgMag * 3 && peakMag > 0.5) {
+                if (detectedFreq === null) {
+                    detectedFreq = freq;
+                } else {
+                    detectedFreq = detectedFreq * 0.8 + freq * 0.2; // Smooth
+                }
+                
+                freqDisplay.innerHTML = detectedFreq.toFixed(1) + ' <span>Hz</span>';
+                noteDisplay.textContent = freqToNote(detectedFreq);
+                statusEl.textContent = `FPS: ${actualFPS.toFixed(0)} | Peak strength: ${(peakMag/avgMag).toFixed(1)}x`;
+            } else {
+                statusEl.textContent = `FPS: ${actualFPS.toFixed(0)} | Waiting for vibration...`;
+            }
+            
+            drawFFTGraph();
+        }
+        
+        // Draw motion signal
+        function drawMotionGraph() {
+            const ctx = motionCtx;
+            const w = motionCanvas.width;
+            const h = motionCanvas.height;
+            
+            ctx.fillStyle = 'rgba(15, 15, 26, 0.3)';
+            ctx.fillRect(0, 0, w, h);
+            
+            if (motionSignal.length < 2) return;
+            
+            const min = Math.min(...motionSignal);
+            const max = Math.max(...motionSignal);
+            const range = max - min || 1;
+            
+            ctx.beginPath();
+            ctx.strokeStyle = '#6bf';
+            ctx.lineWidth = 1.5;
+            
+            for (let i = 0; i < motionSignal.length; i++) {
+                const x = (i / motionSignal.length) * w;
+                const y = h - ((motionSignal[i] - min) / range) * h * 0.8 - h * 0.1;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+        
+        // Draw FFT spectrum
+        function drawFFTGraph() {
+            const ctx = fftCtx;
+            const w = fftCanvas.width;
+            const h = fftCanvas.height;
+            
+            ctx.fillStyle = 'rgba(15, 15, 26, 0.5)';
+            ctx.fillRect(0, 0, w, h);
+            
+            if (!lastSpectrum || lastSpectrum.length < 2) return;
+            
+            // Only show up to 500Hz
+            const maxFreq = 500;
+            const maxBin = Math.min(lastSpectrum.length, Math.floor(maxFreq * lastSpectrum.length * 2 / actualFPS));
+            const spectrum = lastSpectrum.slice(0, maxBin);
+            
+            const max = Math.max(...spectrum);
+            
+            // Draw spectrum as bars
+            ctx.fillStyle = '#6f6';
+            const barWidth = w / spectrum.length;
+            
+            for (let i = 0; i < spectrum.length; i++) {
+                const barHeight = (spectrum[i] / max) * h * 0.9;
+                ctx.fillRect(i * barWidth, h - barHeight, barWidth - 1, barHeight);
+            }
+            
+            // Mark detected frequency
+            if (detectedFreq) {
+                const freqX = (detectedFreq / maxFreq) * w;
+                ctx.strokeStyle = '#f66';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(freqX, 0);
+                ctx.lineTo(freqX, h);
+                ctx.stroke();
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px sans-serif';
+                ctx.fillText(`${detectedFreq.toFixed(0)}Hz`, freqX + 3, 12);
+            }
+            
+            // Frequency labels
+            ctx.fillStyle = '#666';
+            ctx.font = '9px sans-serif';
+            ctx.fillText('0', 2, h - 2);
+            ctx.fillText('250Hz', w/2 - 15, h - 2);
+            ctx.fillText('500Hz', w - 30, h - 2);
+        }
+        
+        // Init
+        resizeCanvases();
+    </script>
+</body>
+</html>
