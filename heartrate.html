@@ -16,81 +16,112 @@
             padding: 20px;
             touch-action: none;
         }
-        h1 { margin-bottom: 10px; font-size: 1.5em; }
-        .subtitle { color: #666; font-size: 0.9em; margin-bottom: 20px; }
+        h1 { margin-bottom: 5px; font-size: 1.5em; }
+        .subtitle { color: #666; font-size: 0.85em; margin-bottom: 15px; text-align: center; }
         
         #video-container {
             position: relative;
             width: 100%;
-            max-width: 400px;
-            aspect-ratio: 4/3;
+            max-width: 350px;
+            aspect-ratio: 1;
             background: #000;
             border-radius: 12px;
             overflow: hidden;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
-        video, #overlay {
+        video {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scaleX(-1);
+            min-width: 100%;
+            min-height: 100%;
+        }
+        #overlay {
             position: absolute;
             top: 0; left: 0;
             width: 100%; height: 100%;
+            pointer-events: none;
         }
-        video { transform: scaleX(-1); }
-        #overlay { pointer-events: none; }
         
         #roi-box {
             position: absolute;
-            border: 2px solid rgba(255, 100, 100, 0.8);
-            background: rgba(255, 100, 100, 0.1);
+            border: 2px solid rgba(100, 255, 100, 0.8);
+            background: rgba(100, 255, 100, 0.15);
+            border-radius: 4px;
+            pointer-events: none;
+            box-shadow: 0 0 10px rgba(100, 255, 100, 0.3);
+        }
+        
+        #face-box {
+            position: absolute;
+            border: 1px dashed rgba(255, 255, 255, 0.3);
             border-radius: 8px;
             pointer-events: none;
         }
         
         #bpm-display {
-            font-size: 4em;
+            font-size: 3.5em;
             font-weight: bold;
             color: #ff6b6b;
             text-shadow: 0 0 30px rgba(255, 107, 107, 0.5);
-            margin: 20px 0;
+            margin: 10px 0;
+            transition: color 0.3s;
         }
-        #bpm-display span { font-size: 0.4em; color: #888; }
+        #bpm-display.detecting { color: #ffaa6b; }
+        #bpm-display.stable { color: #6bff6b; }
+        #bpm-display span { font-size: 0.35em; color: #888; }
+        
+        #confidence {
+            font-size: 0.8em;
+            color: #666;
+            margin-bottom: 10px;
+        }
         
         #signal-container {
             width: 100%;
-            max-width: 500px;
-            height: 150px;
+            max-width: 400px;
+            height: 120px;
             background: rgba(255,255,255,0.05);
             border-radius: 12px;
             overflow: hidden;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
         #signal-canvas { width: 100%; height: 100%; }
         
         #status {
             color: #888;
-            font-size: 0.9em;
+            font-size: 0.85em;
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
+            min-height: 1.2em;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
         }
         
         button {
             background: rgba(255, 107, 107, 0.2);
             border: 1px solid rgba(255, 107, 107, 0.5);
             color: #ff6b6b;
-            padding: 12px 30px;
+            padding: 10px 20px;
             border-radius: 8px;
-            font-size: 1em;
+            font-size: 0.9em;
             cursor: pointer;
             transition: all 0.2s;
         }
-        button:hover {
-            background: rgba(255, 107, 107, 0.3);
-        }
+        button:hover { background: rgba(255, 107, 107, 0.3); }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        button.active { background: rgba(107, 255, 107, 0.2); border-color: rgba(107, 255, 107, 0.5); color: #6bff6b; }
         
         #instructions {
             position: absolute;
             top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.85);
             padding: 20px;
             border-radius: 12px;
             text-align: center;
@@ -106,56 +137,120 @@
             text-decoration: none;
             font-size: 1.5em;
         }
+        
+        #zoom-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        #zoom-control input {
+            width: 100px;
+            accent-color: #ff6b6b;
+        }
+        #zoom-control label {
+            color: #888;
+            font-size: 0.85em;
+        }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 </head>
 <body>
     <a href="index.html" class="back-link">←</a>
     <h1>❤️ Heart Rate Monitor</h1>
-    <p class="subtitle">Tap your forehead or cheek area to start</p>
+    <p class="subtitle">Face detection + forehead tracking</p>
     
     <div id="video-container">
         <video id="video" autoplay playsinline></video>
         <canvas id="overlay"></canvas>
+        <div id="face-box" style="display:none;"></div>
         <div id="roi-box" style="display:none;"></div>
         <div id="instructions">
-            <p>Tap to start camera</p>
+            <p>Tap to start</p>
         </div>
     </div>
     
+    <div id="zoom-control">
+        <label>Zoom:</label>
+        <input type="range" id="zoom-slider" min="1" max="3" step="0.1" value="1.5">
+        <span id="zoom-value">1.5x</span>
+    </div>
+    
     <div id="bpm-display">-- <span>BPM</span></div>
+    <div id="confidence"></div>
     
     <div id="signal-container">
         <canvas id="signal-canvas"></canvas>
     </div>
     
-    <div id="status">Waiting for camera...</div>
+    <div id="status">Tap to start camera</div>
     
-    <button id="reset-btn" style="display:none;">Reset ROI</button>
+    <div class="controls">
+        <button id="reset-btn">Reset</button>
+        <button id="torch-btn">💡 Light</button>
+    </div>
 
     <script>
         const video = document.getElementById('video');
         const overlay = document.getElementById('overlay');
-        const overlayCtx = overlay.getContext('2d');
+        const overlayCtx = overlay.getContext('2d', { willReadFrequently: true });
         const signalCanvas = document.getElementById('signal-canvas');
         const signalCtx = signalCanvas.getContext('2d');
         const bpmDisplay = document.getElementById('bpm-display');
+        const confidenceEl = document.getElementById('confidence');
         const statusEl = document.getElementById('status');
         const roiBox = document.getElementById('roi-box');
+        const faceBox = document.getElementById('face-box');
         const instructions = document.getElementById('instructions');
         const resetBtn = document.getElementById('reset-btn');
+        const torchBtn = document.getElementById('torch-btn');
+        const zoomSlider = document.getElementById('zoom-slider');
+        const zoomValue = document.getElementById('zoom-value');
         const videoContainer = document.getElementById('video-container');
         
         let stream = null;
+        let faceDetection = null;
+        let currentFace = null;
         let roi = null;
         let rawSignal = [];
         let filteredSignal = [];
         let timestamps = [];
+        let bpmHistory = [];
         let currentBPM = null;
         let isRunning = false;
+        let zoom = 1.5;
+        let torchOn = false;
+        let lastTemplate = null;
+        let templatePos = null;
         
-        const BUFFER_SIZE = 256;
-        const MIN_HZ = 0.7;  // 42 BPM
-        const MAX_HZ = 4.0;  // 240 BPM
+        const BUFFER_SIZE = 300;
+        const MIN_HZ = 0.7;
+        const MAX_HZ = 3.5;
+        const BPM_SMOOTHING = 0.15;
+        
+        // Initialize face detection
+        async function initFaceDetection() {
+            faceDetection = new FaceDetection({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
+            });
+            
+            faceDetection.setOptions({
+                model: 'short',
+                minDetectionConfidence: 0.5
+            });
+            
+            faceDetection.onResults(onFaceResults);
+            await faceDetection.initialize();
+        }
+        
+        function onFaceResults(results) {
+            if (results.detections && results.detections.length > 0) {
+                currentFace = results.detections[0];
+            } else {
+                currentFace = null;
+            }
+        }
         
         // Resize canvases
         function resizeCanvases() {
@@ -167,143 +262,403 @@
         }
         window.addEventListener('resize', resizeCanvases);
         
+        // Zoom control
+        zoomSlider.addEventListener('input', (e) => {
+            zoom = parseFloat(e.target.value);
+            zoomValue.textContent = zoom.toFixed(1) + 'x';
+            video.style.transform = `translate(-50%, -50%) scaleX(-${zoom}) scaleY(${zoom})`;
+        });
+        
         // Start camera
         async function startCamera() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
-                });
+                statusEl.textContent = 'Starting camera...';
+                
+                const constraints = {
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }
+                };
+                
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 await video.play();
+                
+                // Apply initial zoom
+                video.style.transform = `translate(-50%, -50%) scaleX(-${zoom}) scaleY(${zoom})`;
+                
                 instructions.classList.add('hidden');
-                statusEl.textContent = 'Tap on your forehead or cheek to select region';
+                statusEl.textContent = 'Initializing face detection...';
+                
+                await initFaceDetection();
+                
                 resizeCanvases();
+                isRunning = true;
+                statusEl.textContent = 'Looking for face...';
+                requestAnimationFrame(processFrame);
+                
             } catch (err) {
                 statusEl.textContent = 'Camera error: ' + err.message;
+                console.error(err);
             }
         }
         
-        // Handle tap to select ROI
-        videoContainer.addEventListener('click', async (e) => {
+        // Toggle torch
+        torchBtn.addEventListener('click', async () => {
+            if (!stream) return;
+            const track = stream.getVideoTracks()[0];
+            const capabilities = track.getCapabilities();
+            
+            if (capabilities.torch) {
+                torchOn = !torchOn;
+                await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+                torchBtn.classList.toggle('active', torchOn);
+            } else {
+                statusEl.textContent = 'Torch not available';
+            }
+        });
+        
+        // Handle tap to start
+        videoContainer.addEventListener('click', async () => {
             if (!stream) {
                 await startCamera();
-                return;
             }
-            
-            const rect = videoContainer.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            
-            // Mirror x coordinate to match video
-            const mirroredX = rect.width - x;
-            
-            // ROI size (relative to container)
-            const size = Math.min(rect.width, rect.height) * 0.25;
-            
-            roi = {
-                x: mirroredX - size/2,
-                y: y - size/2,
-                width: size,
-                height: size,
-                // For sampling (in video coordinates)
-                videoX: (mirroredX / rect.width) * video.videoWidth,
-                videoY: (y / rect.height) * video.videoHeight,
-                videoW: (size / rect.width) * video.videoWidth,
-                videoH: (size / rect.height) * video.videoHeight
-            };
-            
-            // Show ROI box (mirrored back for display)
-            roiBox.style.display = 'block';
-            roiBox.style.left = (rect.width - roi.x - roi.width) + 'px';
-            roiBox.style.top = roi.y + 'px';
-            roiBox.style.width = roi.width + 'px';
-            roiBox.style.height = roi.height + 'px';
-            
-            resetBtn.style.display = 'block';
-            rawSignal = [];
-            filteredSignal = [];
-            timestamps = [];
-            isRunning = true;
-            statusEl.textContent = 'Measuring... hold still';
-            requestAnimationFrame(processFrame);
         });
         
+        // Reset
         resetBtn.addEventListener('click', () => {
-            roi = null;
-            roiBox.style.display = 'none';
-            resetBtn.style.display = 'none';
-            isRunning = false;
             rawSignal = [];
             filteredSignal = [];
             timestamps = [];
+            bpmHistory = [];
+            currentBPM = null;
+            lastTemplate = null;
+            templatePos = null;
             bpmDisplay.innerHTML = '-- <span>BPM</span>';
-            statusEl.textContent = 'Tap on your forehead or cheek to select region';
+            bpmDisplay.className = '';
+            confidenceEl.textContent = '';
+            statusEl.textContent = 'Looking for face...';
         });
         
-        // Process video frame
-        function processFrame() {
-            if (!isRunning || !roi) return;
+        // Get forehead ROI from face detection
+        function getForeheadROI(face, containerW, containerH) {
+            const box = face.boundingBox;
             
-            // Draw video to overlay canvas to sample pixels
-            overlayCtx.drawImage(video, 0, 0, overlay.width, overlay.height);
+            // Face box in normalized coords
+            const faceX = box.xCenter - box.width / 2;
+            const faceY = box.yCenter - box.height / 2;
             
-            // Sample ROI
-            const imageData = overlayCtx.getImageData(
-                roi.videoX * (overlay.width / video.videoWidth),
-                roi.videoY * (overlay.height / video.videoHeight),
-                roi.videoW * (overlay.width / video.videoWidth),
-                roi.videoH * (overlay.height / video.videoHeight)
-            );
+            // Forehead is upper portion of face, centered
+            // Account for zoom: the visible area is 1/zoom of the video
+            const visibleW = 1 / zoom;
+            const visibleH = 1 / zoom;
+            const offsetX = (1 - visibleW) / 2;
+            const offsetY = (1 - visibleH) / 2;
             
-            // Calculate average green channel
-            let greenSum = 0;
-            let count = 0;
-            for (let i = 0; i < imageData.data.length; i += 4) {
-                greenSum += imageData.data[i + 1]; // Green channel
-                count++;
-            }
-            const avgGreen = greenSum / count;
+            // Transform face coords to zoomed view
+            const adjX = (faceX - offsetX) / visibleW;
+            const adjY = (faceY - offsetY) / visibleH;
+            const adjW = box.width / visibleW;
+            const adjH = box.height / visibleH;
             
-            const now = performance.now();
-            rawSignal.push(avgGreen);
-            timestamps.push(now);
+            // Mirror X for display (camera is mirrored)
+            const mirrorX = 1 - adjX - adjW;
             
-            // Keep buffer size limited
-            while (rawSignal.length > BUFFER_SIZE) {
-                rawSignal.shift();
-                timestamps.shift();
-            }
+            // Forehead region: top 25% of face, middle 40%
+            const roiW = adjW * 0.4;
+            const roiH = adjH * 0.2;
+            const roiX = mirrorX + (adjW - roiW) / 2;
+            const roiY = adjY + adjH * 0.08;
             
-            // Need enough samples
-            if (rawSignal.length >= 64) {
-                // Detrend signal (remove DC and slow drift)
-                const detrended = detrend(rawSignal);
-                
-                // Apply bandpass filter
-                const filtered = bandpassFilter(detrended, timestamps);
-                filteredSignal = filtered;
-                
-                // Estimate BPM using zero-crossing or peak detection
-                if (filtered.length >= 64) {
-                    const bpm = estimateBPM(filtered, timestamps);
-                    if (bpm) {
-                        currentBPM = currentBPM ? currentBPM * 0.8 + bpm * 0.2 : bpm;
-                        bpmDisplay.innerHTML = Math.round(currentBPM) + ' <span>BPM</span>';
-                        statusEl.textContent = 'Signal detected - hold still for accuracy';
+            return {
+                x: roiX * containerW,
+                y: roiY * containerH,
+                width: roiW * containerW,
+                height: roiH * containerH,
+                // For face box display
+                faceX: mirrorX * containerW,
+                faceY: adjY * containerH,
+                faceW: adjW * containerW,
+                faceH: adjH * containerH
+            };
+        }
+        
+        // Template matching for tracking
+        function matchTemplate(imageData, template, searchX, searchY, searchW, searchH) {
+            if (!template) return null;
+            
+            const tw = template.width;
+            const th = template.height;
+            let bestX = searchX, bestY = searchY;
+            let bestScore = Infinity;
+            
+            const step = 2; // Search every 2 pixels for speed
+            
+            for (let y = searchY; y < searchY + searchH - th; y += step) {
+                for (let x = searchX; x < searchX + searchW - tw; x += step) {
+                    let score = 0;
+                    let count = 0;
+                    
+                    // Sample pixels (not all, for speed)
+                    for (let ty = 0; ty < th; ty += 3) {
+                        for (let tx = 0; tx < tw; tx += 3) {
+                            const imgIdx = ((y + ty) * imageData.width + (x + tx)) * 4;
+                            const tplIdx = (ty * tw + tx) * 4;
+                            
+                            // Compare green channel primarily (best for PPG)
+                            const diff = imageData.data[imgIdx + 1] - template.data[tplIdx + 1];
+                            score += diff * diff;
+                            count++;
+                        }
+                    }
+                    
+                    score /= count;
+                    if (score < bestScore) {
+                        bestScore = score;
+                        bestX = x;
+                        bestY = y;
                     }
                 }
             }
             
-            // Draw signal graph
+            return { x: bestX, y: bestY, score: bestScore };
+        }
+        
+        // Extract template from image data
+        function extractTemplate(imageData, x, y, w, h) {
+            const template = {
+                width: Math.floor(w),
+                height: Math.floor(h),
+                data: new Uint8ClampedArray(Math.floor(w) * Math.floor(h) * 4)
+            };
+            
+            for (let ty = 0; ty < template.height; ty++) {
+                for (let tx = 0; tx < template.width; tx++) {
+                    const srcIdx = ((Math.floor(y) + ty) * imageData.width + Math.floor(x) + tx) * 4;
+                    const dstIdx = (ty * template.width + tx) * 4;
+                    template.data[dstIdx] = imageData.data[srcIdx];
+                    template.data[dstIdx + 1] = imageData.data[srcIdx + 1];
+                    template.data[dstIdx + 2] = imageData.data[srcIdx + 2];
+                    template.data[dstIdx + 3] = imageData.data[srcIdx + 3];
+                }
+            }
+            
+            return template;
+        }
+        
+        // Process video frame
+        let frameCount = 0;
+        async function processFrame() {
+            if (!isRunning) return;
+            
+            const containerW = overlay.width;
+            const containerH = overlay.height;
+            
+            // Draw video to canvas
+            overlayCtx.save();
+            overlayCtx.translate(containerW, 0);
+            overlayCtx.scale(-zoom, zoom);
+            const offsetX = (video.videoWidth * (1 - 1/zoom)) / 2;
+            const offsetY = (video.videoHeight * (1 - 1/zoom)) / 2;
+            overlayCtx.drawImage(video, 
+                -offsetX, -offsetY,
+                video.videoWidth, video.videoHeight,
+                0, 0,
+                containerW / zoom, containerH / zoom
+            );
+            overlayCtx.restore();
+            
+            // Run face detection every 5 frames
+            if (frameCount % 5 === 0) {
+                await faceDetection.send({ image: video });
+            }
+            frameCount++;
+            
+            const imageData = overlayCtx.getImageData(0, 0, containerW, containerH);
+            
+            if (currentFace) {
+                roi = getForeheadROI(currentFace, containerW, containerH);
+                
+                // Show face box
+                faceBox.style.display = 'block';
+                faceBox.style.left = roi.faceX + 'px';
+                faceBox.style.top = roi.faceY + 'px';
+                faceBox.style.width = roi.faceW + 'px';
+                faceBox.style.height = roi.faceH + 'px';
+                
+                // Template tracking for stability
+                if (lastTemplate && templatePos) {
+                    const searchMargin = 20;
+                    const match = matchTemplate(
+                        imageData, lastTemplate,
+                        Math.max(0, templatePos.x - searchMargin),
+                        Math.max(0, templatePos.y - searchMargin),
+                        Math.min(lastTemplate.width + searchMargin * 2, containerW - templatePos.x + searchMargin),
+                        Math.min(lastTemplate.height + searchMargin * 2, containerH - templatePos.y + searchMargin)
+                    );
+                    
+                    if (match && match.score < 1000) {
+                        // Blend tracked position with detected position
+                        roi.x = roi.x * 0.3 + match.x * 0.7;
+                        roi.y = roi.y * 0.3 + match.y * 0.7;
+                    }
+                }
+                
+                // Update template periodically
+                if (frameCount % 30 === 0 && roi.width > 10 && roi.height > 10) {
+                    lastTemplate = extractTemplate(imageData, roi.x, roi.y, roi.width, roi.height);
+                    templatePos = { x: roi.x, y: roi.y };
+                }
+                
+                // Show ROI box
+                roiBox.style.display = 'block';
+                roiBox.style.left = roi.x + 'px';
+                roiBox.style.top = roi.y + 'px';
+                roiBox.style.width = roi.width + 'px';
+                roiBox.style.height = roi.height + 'px';
+                
+                // Sample ROI - focus on center for best signal
+                const sampleX = Math.floor(roi.x + roi.width * 0.2);
+                const sampleY = Math.floor(roi.y + roi.height * 0.2);
+                const sampleW = Math.floor(roi.width * 0.6);
+                const sampleH = Math.floor(roi.height * 0.6);
+                
+                let greenSum = 0, redSum = 0, count = 0;
+                
+                for (let y = sampleY; y < sampleY + sampleH && y < containerH; y++) {
+                    for (let x = sampleX; x < sampleX + sampleW && x < containerW; x++) {
+                        const idx = (y * containerW + x) * 4;
+                        redSum += imageData.data[idx];
+                        greenSum += imageData.data[idx + 1];
+                        count++;
+                    }
+                }
+                
+                if (count > 0) {
+                    // Use green channel, normalize by red to reduce lighting effects
+                    const green = greenSum / count;
+                    const red = redSum / count;
+                    const normalized = green / (red + 0.001);
+                    
+                    const now = performance.now();
+                    rawSignal.push(normalized);
+                    timestamps.push(now);
+                    
+                    while (rawSignal.length > BUFFER_SIZE) {
+                        rawSignal.shift();
+                        timestamps.shift();
+                    }
+                    
+                    if (rawSignal.length >= 90) {
+                        processSignal();
+                    } else {
+                        statusEl.textContent = `Collecting data... ${Math.round(rawSignal.length / 90 * 100)}%`;
+                    }
+                }
+            } else {
+                faceBox.style.display = 'none';
+                roiBox.style.display = 'none';
+                statusEl.textContent = 'Looking for face...';
+                lastTemplate = null;
+                templatePos = null;
+            }
+            
+            // Clear overlay for next frame
+            overlayCtx.clearRect(0, 0, containerW, containerH);
+            
             drawSignal();
-            
-            // Clear overlay (we just used it for sampling)
-            overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
-            
             requestAnimationFrame(processFrame);
         }
         
-        // Remove linear trend from signal
+        // Butterworth bandpass filter coefficients (pre-calculated for ~30fps, 0.7-3.5Hz)
+        function butterworthBandpass(signal, sampleRate) {
+            // Simple IIR bandpass approximation
+            const lowCutoff = MIN_HZ / (sampleRate / 2);
+            const highCutoff = MAX_HZ / (sampleRate / 2);
+            
+            // Two-pass moving average for bandpass effect
+            const lowPassSize = Math.max(2, Math.round(sampleRate / MAX_HZ / 2));
+            const highPassSize = Math.max(3, Math.round(sampleRate / MIN_HZ));
+            
+            // Low pass
+            let lowPassed = [];
+            for (let i = 0; i < signal.length; i++) {
+                const start = Math.max(0, i - lowPassSize);
+                const slice = signal.slice(start, i + 1);
+                lowPassed.push(slice.reduce((a, b) => a + b, 0) / slice.length);
+            }
+            
+            // High pass (subtract very slow moving average)
+            let result = [];
+            for (let i = 0; i < lowPassed.length; i++) {
+                const start = Math.max(0, i - highPassSize);
+                const slice = lowPassed.slice(start, i + 1);
+                const slowAvg = slice.reduce((a, b) => a + b, 0) / slice.length;
+                result.push(lowPassed[i] - slowAvg);
+            }
+            
+            return result;
+        }
+        
+        function processSignal() {
+            const duration = (timestamps[timestamps.length - 1] - timestamps[0]) / 1000;
+            const sampleRate = rawSignal.length / duration;
+            
+            // Detrend
+            const detrended = detrend(rawSignal);
+            
+            // Bandpass filter
+            filteredSignal = butterworthBandpass(detrended, sampleRate);
+            
+            // Find BPM using autocorrelation (more robust than peak detection)
+            const bpm = estimateBPMAutocorr(filteredSignal, sampleRate);
+            
+            if (bpm && bpm >= 42 && bpm <= 200) {
+                bpmHistory.push(bpm);
+                if (bpmHistory.length > 10) bpmHistory.shift();
+                
+                // Median filter for stability
+                const sorted = [...bpmHistory].sort((a, b) => a - b);
+                const median = sorted[Math.floor(sorted.length / 2)];
+                
+                if (currentBPM === null) {
+                    currentBPM = median;
+                } else {
+                    currentBPM = currentBPM * (1 - BPM_SMOOTHING) + median * BPM_SMOOTHING;
+                }
+                
+                bpmDisplay.innerHTML = Math.round(currentBPM) + ' <span>BPM</span>';
+                
+                // Confidence based on signal quality
+                const variance = calcVariance(bpmHistory);
+                const cv = Math.sqrt(variance) / (currentBPM || 1);
+                
+                if (cv < 0.05) {
+                    bpmDisplay.className = 'stable';
+                    confidenceEl.textContent = '● High confidence';
+                    confidenceEl.style.color = '#6bff6b';
+                } else if (cv < 0.15) {
+                    bpmDisplay.className = 'detecting';
+                    confidenceEl.textContent = '● Detecting...';
+                    confidenceEl.style.color = '#ffaa6b';
+                } else {
+                    bpmDisplay.className = '';
+                    confidenceEl.textContent = '● Low confidence';
+                    confidenceEl.style.color = '#ff6b6b';
+                }
+                
+                statusEl.textContent = `Sample rate: ${sampleRate.toFixed(1)} Hz`;
+            }
+        }
+        
+        function calcVariance(arr) {
+            if (arr.length < 2) return 0;
+            const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+            return arr.reduce((sum, val) => sum + (val - mean) ** 2, 0) / arr.length;
+        }
+        
         function detrend(signal) {
             const n = signal.length;
             let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
@@ -315,81 +670,39 @@
             }
             const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
             const intercept = (sumY - slope * sumX) / n;
-            
             return signal.map((v, i) => v - (slope * i + intercept));
         }
         
-        // Simple bandpass using moving averages
-        function bandpassFilter(signal, times) {
-            if (signal.length < 10) return signal;
+        // Autocorrelation-based BPM estimation
+        function estimateBPMAutocorr(signal, sampleRate) {
+            const n = signal.length;
+            if (n < 60) return null;
             
-            // Estimate sample rate
-            const duration = (times[times.length-1] - times[0]) / 1000;
-            const sampleRate = signal.length / duration;
+            // Min/max lag for 42-200 BPM
+            const minLag = Math.floor(sampleRate * 60 / 200);
+            const maxLag = Math.ceil(sampleRate * 60 / 42);
             
-            // High-pass: subtract slow moving average (removes < 0.7 Hz)
-            const slowWindow = Math.round(sampleRate / MIN_HZ);
-            const highPassed = [];
-            for (let i = 0; i < signal.length; i++) {
-                const start = Math.max(0, i - slowWindow);
-                const end = i + 1;
-                const avg = signal.slice(start, end).reduce((a,b) => a+b, 0) / (end - start);
-                highPassed.push(signal[i] - avg);
-            }
+            let bestLag = minLag;
+            let bestCorr = -Infinity;
             
-            // Low-pass: smooth with fast moving average (removes > 4 Hz)
-            const fastWindow = Math.max(2, Math.round(sampleRate / MAX_HZ / 2));
-            const lowPassed = [];
-            for (let i = 0; i < highPassed.length; i++) {
-                const start = Math.max(0, i - fastWindow);
-                const end = Math.min(highPassed.length, i + fastWindow + 1);
-                const avg = highPassed.slice(start, end).reduce((a,b) => a+b, 0) / (end - start);
-                lowPassed.push(avg);
-            }
-            
-            return lowPassed;
-        }
-        
-        // Estimate BPM from filtered signal
-        function estimateBPM(signal, times) {
-            if (signal.length < 30) return null;
-            
-            const duration = (times[times.length-1] - times[0]) / 1000;
-            const sampleRate = signal.length / duration;
-            
-            // Find peaks
-            const peaks = [];
-            for (let i = 2; i < signal.length - 2; i++) {
-                if (signal[i] > signal[i-1] && signal[i] > signal[i+1] &&
-                    signal[i] > signal[i-2] && signal[i] > signal[i+2]) {
-                    // Check if it's a significant peak
-                    const localMax = Math.max(...signal.slice(Math.max(0,i-10), i+10));
-                    const localMin = Math.min(...signal.slice(Math.max(0,i-10), i+10));
-                    if (signal[i] > localMin + (localMax - localMin) * 0.5) {
-                        peaks.push(i);
-                    }
+            // Compute autocorrelation
+            for (let lag = minLag; lag <= Math.min(maxLag, n / 2); lag++) {
+                let corr = 0;
+                let count = 0;
+                for (let i = 0; i < n - lag; i++) {
+                    corr += signal[i] * signal[i + lag];
+                    count++;
+                }
+                corr /= count;
+                
+                if (corr > bestCorr) {
+                    bestCorr = corr;
+                    bestLag = lag;
                 }
             }
             
-            if (peaks.length < 2) return null;
-            
-            // Calculate average interval between peaks
-            let totalInterval = 0;
-            let validIntervals = 0;
-            for (let i = 1; i < peaks.length; i++) {
-                const interval = (peaks[i] - peaks[i-1]) / sampleRate;
-                const bpm = 60 / interval;
-                // Only count reasonable intervals
-                if (bpm >= 42 && bpm <= 240) {
-                    totalInterval += interval;
-                    validIntervals++;
-                }
-            }
-            
-            if (validIntervals === 0) return null;
-            
-            const avgInterval = totalInterval / validIntervals;
-            return 60 / avgInterval;
+            const period = bestLag / sampleRate;
+            return 60 / period;
         }
         
         // Draw signal visualization
@@ -398,18 +711,17 @@
             const w = signalCanvas.width;
             const h = signalCanvas.height;
             
-            ctx.fillStyle = 'rgba(15, 15, 26, 0.3)';
+            ctx.fillStyle = 'rgba(15, 15, 26, 0.4)';
             ctx.fillRect(0, 0, w, h);
             
             const signal = filteredSignal.length > 0 ? filteredSignal : rawSignal;
             if (signal.length < 2) return;
             
-            // Normalize signal
             const min = Math.min(...signal);
             const max = Math.max(...signal);
             const range = max - min || 1;
             
-            // Draw waveform
+            // Waveform
             ctx.beginPath();
             ctx.strokeStyle = '#ff6b6b';
             ctx.lineWidth = 2;
@@ -422,16 +734,16 @@
             }
             ctx.stroke();
             
-            // Draw center line
+            // Zero line
             ctx.strokeStyle = 'rgba(255,255,255,0.1)';
             ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.moveTo(0, h/2);
-            ctx.lineTo(w, h/2);
+            ctx.moveTo(0, h / 2);
+            ctx.lineTo(w, h / 2);
             ctx.stroke();
         }
         
-        // Initial draw
+        // Initial setup
         resizeCanvases();
         drawSignal();
     </script>
