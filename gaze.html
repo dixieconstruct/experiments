@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Gaze Tracker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            color: #eee;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        #gaze-dot {
+            position: fixed;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,100,100,0.9) 0%, rgba(255,50,50,0.5) 50%, transparent 70%);
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            transition: left 0.08s ease-out, top 0.08s ease-out;
+            box-shadow: 0 0 30px rgba(255,100,100,0.6);
+        }
+        
+        #video-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            aspect-ratio: 4/3;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid rgba(255,255,255,0.2);
+            z-index: 100;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+        }
+        #overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        #calibration {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        #calibration.hidden { display: none; }
+        
+        #calibration h2 { margin-bottom: 20px; }
+        #calibration p { color: #888; margin-bottom: 30px; text-align: center; max-width: 300px; }
+        
+        .cal-point {
+            position: fixed;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #ff6b6b;
+            cursor: pointer;
+            transform: translate(-50%, -50%);
+            transition: transform 0.2s, background 0.2s;
+            z-index: 2001;
+        }
+        .cal-point:hover { transform: translate(-50%, -50%) scale(1.3); }
+        .cal-point.done { background: #6f6; }
+        .cal-point.active { 
+            background: #ff0; 
+            animation: pulse 0.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.4); }
+        }
+        
+        #status {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            z-index: 100;
+        }
+        
+        .back-link {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            color: #ff6b6b;
+            text-decoration: none;
+            font-size: 1.5em;
+            background: rgba(255, 107, 107, 0.2);
+            padding: 5px 12px;
+            border-radius: 8px;
+            z-index: 100;
+        }
+        .back-link:hover { background: rgba(255, 107, 107, 0.3); }
+        
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+        
+        button {
+            background: rgba(255, 107, 107, 0.2);
+            border: 1px solid rgba(255, 107, 107, 0.5);
+            color: #ff6b6b;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            cursor: pointer;
+        }
+        button:hover { background: rgba(255, 107, 107, 0.3); }
+        
+        #debug {
+            position: fixed;
+            bottom: 240px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.75em;
+            font-family: monospace;
+            z-index: 100;
+            width: 200px;
+        }
+        
+        .target-box {
+            position: fixed;
+            border: 3px dashed rgba(255,255,255,0.3);
+            border-radius: 10px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">←</a>
+    
+    <div id="calibration">
+        <h2>👁️ Gaze Tracker</h2>
+        <p>Click each red dot while looking directly at it. This calibrates eye tracking to your screen.</p>
+        <button id="start-cal-btn">Start Calibration</button>
+    </div>
+    
+    <div id="gaze-dot"></div>
+    
+    <div id="status">Initializing...</div>
+    
+    <div id="video-container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="overlay"></canvas>
+    </div>
+    
+    <div id="debug">
+        <div>Iris L: <span id="dbg-iris-l">--</span></div>
+        <div>Iris R: <span id="dbg-iris-r">--</span></div>
+        <div>Gaze: <span id="dbg-gaze">--</span></div>
+    </div>
+    
+    <div id="controls">
+        <button id="recalibrate-btn">🎯 Recalibrate</button>
+    </div>
+
+    <!-- MediaPipe Face Mesh -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    
+    <script>
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const ctx = overlay.getContext('2d');
+        const gazeDot = document.getElementById('gaze-dot');
+        const calibrationDiv = document.getElementById('calibration');
+        const statusEl = document.getElementById('status');
+        const startCalBtn = document.getElementById('start-cal-btn');
+        const recalibrateBtn = document.getElementById('recalibrate-btn');
+        
+        // Debug elements
+        const dbgIrisL = document.getElementById('dbg-iris-l');
+        const dbgIrisR = document.getElementById('dbg-iris-r');
+        const dbgGaze = document.getElementById('dbg-gaze');
+        
+        let faceMesh = null;
+        let camera = null;
+        
+        // Calibration data
+        let calibrationPoints = [];
+        let calibrationData = []; // {screenX, screenY, irisL, irisR}
+        let isCalibrated = false;
+        let currentCalPoint = 0;
+        
+        // Regression model (simple linear mapping)
+        let model = null;
+        
+        // Smoothing
+        let smoothedGaze = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        const SMOOTHING = 0.3;
+        
+        // Iris landmarks in MediaPipe Face Mesh
+        // Left eye iris: 468-472 (center is 468)
+        // Right eye iris: 473-477 (center is 473)
+        // Left eye corners: 33 (outer), 133 (inner)
+        // Right eye corners: 362 (outer), 263 (inner)
+        const LEFT_IRIS_CENTER = 468;
+        const RIGHT_IRIS_CENTER = 473;
+        const LEFT_EYE_OUTER = 33;
+        const LEFT_EYE_INNER = 133;
+        const RIGHT_EYE_OUTER = 362;
+        const RIGHT_EYE_INNER = 263;
+        
+        // Initialize
+        async function init() {
+            statusEl.textContent = 'Loading face mesh model...';
+            
+            faceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+            });
+            
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true, // Needed for iris tracking
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            
+            faceMesh.onResults(onResults);
+            
+            // Start camera
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user', width: 640, height: 480 }
+            });
+            video.srcObject = stream;
+            await video.play();
+            
+            overlay.width = video.videoWidth || 640;
+            overlay.height = video.videoHeight || 480;
+            
+            statusEl.textContent = 'Face mesh ready. Click Start Calibration.';
+            
+            // Process frames
+            processFrame();
+        }
+        
+        async function processFrame() {
+            if (video.readyState >= 2) {
+                await faceMesh.send({ image: video });
+            }
+            requestAnimationFrame(processFrame);
+        }
+        
+        function onResults(results) {
+            // Clear overlay
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+            
+            if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+                statusEl.textContent = 'No face detected';
+                return;
+            }
+            
+            const landmarks = results.multiFaceLandmarks[0];
+            
+            // Get iris positions relative to eye corners (normalized 0-1)
+            const leftIris = landmarks[LEFT_IRIS_CENTER];
+            const rightIris = landmarks[RIGHT_IRIS_CENTER];
+            const leftOuter = landmarks[LEFT_EYE_OUTER];
+            const leftInner = landmarks[LEFT_EYE_INNER];
+            const rightOuter = landmarks[RIGHT_EYE_OUTER];
+            const rightInner = landmarks[RIGHT_EYE_INNER];
+            
+            // Calculate iris position as ratio within eye (0 = outer corner, 1 = inner corner)
+            const leftEyeWidth = Math.sqrt(
+                Math.pow(leftInner.x - leftOuter.x, 2) + 
+                Math.pow(leftInner.y - leftOuter.y, 2)
+            );
+            const rightEyeWidth = Math.sqrt(
+                Math.pow(rightInner.x - rightOuter.x, 2) + 
+                Math.pow(rightInner.y - rightOuter.y, 2)
+            );
+            
+            // Iris X position (0-1, where 0.5 is center)
+            const leftIrisX = (leftIris.x - leftOuter.x) / (leftInner.x - leftOuter.x);
+            const rightIrisX = (rightIris.x - rightOuter.x) / (rightInner.x - rightOuter.x);
+            
+            // Iris Y position relative to eye center
+            const leftEyeCenterY = (leftOuter.y + leftInner.y) / 2;
+            const rightEyeCenterY = (rightOuter.y + rightInner.y) / 2;
+            const leftIrisY = (leftIris.y - leftEyeCenterY) / leftEyeWidth * 4; // Scale factor
+            const rightIrisY = (rightIris.y - rightEyeCenterY) / rightEyeWidth * 4;
+            
+            // Average both eyes
+            const irisX = (leftIrisX + rightIrisX) / 2;
+            const irisY = (leftIrisY + rightIrisY) / 2;
+            
+            // Debug display
+            dbgIrisL.textContent = `${leftIrisX.toFixed(2)}, ${leftIrisY.toFixed(2)}`;
+            dbgIrisR.textContent = `${rightIrisX.toFixed(2)}, ${rightIrisY.toFixed(2)}`;
+            
+            // Draw iris points on overlay
+            ctx.save();
+            ctx.scale(-1, 1);
+            ctx.translate(-overlay.width, 0);
+            
+            // Left iris
+            ctx.beginPath();
+            ctx.arc(leftIris.x * overlay.width, leftIris.y * overlay.height, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#0ff';
+            ctx.fill();
+            
+            // Right iris
+            ctx.beginPath();
+            ctx.arc(rightIris.x * overlay.width, rightIris.y * overlay.height, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#0ff';
+            ctx.fill();
+            
+            // Eye corners
+            ctx.fillStyle = '#ff0';
+            [leftOuter, leftInner, rightOuter, rightInner].forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x * overlay.width, p.y * overlay.height, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            ctx.restore();
+            
+            // If calibrated, estimate gaze
+            if (isCalibrated && model) {
+                const gazeX = model.xOffset + model.xScaleIris * irisX + model.xScaleIrisY * irisY;
+                const gazeY = model.yOffset + model.yScaleIris * irisY + model.yScaleIrisX * irisX;
+                
+                // Smooth
+                smoothedGaze.x = smoothedGaze.x * (1 - SMOOTHING) + gazeX * SMOOTHING;
+                smoothedGaze.y = smoothedGaze.y * (1 - SMOOTHING) + gazeY * SMOOTHING;
+                
+                // Clamp to screen
+                const clampedX = Math.max(0, Math.min(window.innerWidth, smoothedGaze.x));
+                const clampedY = Math.max(0, Math.min(window.innerHeight, smoothedGaze.y));
+                
+                gazeDot.style.left = clampedX + 'px';
+                gazeDot.style.top = clampedY + 'px';
+                
+                dbgGaze.textContent = `${Math.round(clampedX)}, ${Math.round(clampedY)}`;
+                statusEl.textContent = 'Tracking gaze...';
+            } else if (!isCalibrated) {
+                // Store current iris data for calibration
+                window.currentIris = { x: irisX, y: irisY };
+            }
+        }
+        
+        // Calibration
+        function setupCalibration() {
+            // 9-point calibration grid
+            const padding = 50;
+            const positions = [
+                { x: padding, y: padding },
+                { x: window.innerWidth / 2, y: padding },
+                { x: window.innerWidth - padding, y: padding },
+                { x: padding, y: window.innerHeight / 2 },
+                { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+                { x: window.innerWidth - padding, y: window.innerHeight / 2 },
+                { x: padding, y: window.innerHeight - padding },
+                { x: window.innerWidth / 2, y: window.innerHeight - padding },
+                { x: window.innerWidth - padding, y: window.innerHeight - padding },
+            ];
+            
+            // Create calibration points
+            calibrationPoints.forEach(p => p.remove());
+            calibrationPoints = [];
+            calibrationData = [];
+            
+            positions.forEach((pos, i) => {
+                const point = document.createElement('div');
+                point.className = 'cal-point';
+                point.style.left = pos.x + 'px';
+                point.style.top = pos.y + 'px';
+                point.dataset.index = i;
+                point.dataset.x = pos.x;
+                point.dataset.y = pos.y;
+                
+                point.addEventListener('click', () => onCalPointClick(point, i));
+                
+                document.body.appendChild(point);
+                calibrationPoints.push(point);
+            });
+            
+            currentCalPoint = 0;
+            calibrationPoints[0].classList.add('active');
+        }
+        
+        function onCalPointClick(point, index) {
+            if (index !== currentCalPoint) return;
+            if (!window.currentIris) return;
+            
+            // Record calibration data
+            calibrationData.push({
+                screenX: parseFloat(point.dataset.x),
+                screenY: parseFloat(point.dataset.y),
+                irisX: window.currentIris.x,
+                irisY: window.currentIris.y
+            });
+            
+            point.classList.remove('active');
+            point.classList.add('done');
+            
+            currentCalPoint++;
+            
+            if (currentCalPoint < calibrationPoints.length) {
+                calibrationPoints[currentCalPoint].classList.add('active');
+            } else {
+                // Calibration complete
+                computeModel();
+                calibrationPoints.forEach(p => p.remove());
+                calibrationPoints = [];
+                isCalibrated = true;
+                statusEl.textContent = 'Calibration complete!';
+            }
+        }
+        
+        function computeModel() {
+            // Simple linear regression from iris position to screen position
+            // screenX = xOffset + xScale * irisX
+            // screenY = yOffset + yScale * irisY
+            
+            const n = calibrationData.length;
+            
+            // Compute means
+            let sumScreenX = 0, sumScreenY = 0, sumIrisX = 0, sumIrisY = 0;
+            calibrationData.forEach(d => {
+                sumScreenX += d.screenX;
+                sumScreenY += d.screenY;
+                sumIrisX += d.irisX;
+                sumIrisY += d.irisY;
+            });
+            
+            const meanScreenX = sumScreenX / n;
+            const meanScreenY = sumScreenY / n;
+            const meanIrisX = sumIrisX / n;
+            const meanIrisY = sumIrisY / n;
+            
+            // Compute regression coefficients
+            let covXIrisX = 0, covXIrisY = 0, covYIrisX = 0, covYIrisY = 0;
+            let varIrisX = 0, varIrisY = 0;
+            
+            calibrationData.forEach(d => {
+                const dIrisX = d.irisX - meanIrisX;
+                const dIrisY = d.irisY - meanIrisY;
+                const dScreenX = d.screenX - meanScreenX;
+                const dScreenY = d.screenY - meanScreenY;
+                
+                covXIrisX += dScreenX * dIrisX;
+                covXIrisY += dScreenX * dIrisY;
+                covYIrisX += dScreenY * dIrisX;
+                covYIrisY += dScreenY * dIrisY;
+                varIrisX += dIrisX * dIrisX;
+                varIrisY += dIrisY * dIrisY;
+            });
+            
+            // Simple model: X depends mainly on irisX, Y depends mainly on irisY
+            const xScaleIris = varIrisX > 0.0001 ? covXIrisX / varIrisX : 0;
+            const yScaleIris = varIrisY > 0.0001 ? covYIrisY / varIrisY : 0;
+            
+            // Cross terms for better accuracy
+            const xScaleIrisY = varIrisY > 0.0001 ? covXIrisY / varIrisY : 0;
+            const yScaleIrisX = varIrisX > 0.0001 ? covYIrisX / varIrisX : 0;
+            
+            model = {
+                xOffset: meanScreenX - xScaleIris * meanIrisX - xScaleIrisY * meanIrisY,
+                yOffset: meanScreenY - yScaleIris * meanIrisY - yScaleIrisX * meanIrisX,
+                xScaleIris,
+                yScaleIris,
+                xScaleIrisY,
+                yScaleIrisX
+            };
+            
+            console.log('Calibration model:', model);
+        }
+        
+        // UI handlers
+        startCalBtn.addEventListener('click', () => {
+            calibrationDiv.classList.add('hidden');
+            setupCalibration();
+        });
+        
+        recalibrateBtn.addEventListener('click', () => {
+            isCalibrated = false;
+            model = null;
+            calibrationDiv.classList.remove('hidden');
+        });
+        
+        // Start
+        init();
+    </script>
+</body>
+</html>
