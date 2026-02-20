@@ -61,11 +61,11 @@
         }
         
         #bpm-display {
-            font-size: 3.5em;
+            font-size: 2.8em;
             font-weight: bold;
             color: #ff6b6b;
             text-shadow: 0 0 30px rgba(255, 107, 107, 0.5);
-            margin: 10px 0;
+            margin: 5px 0;
             transition: color 0.3s;
         }
         #bpm-display.detecting { color: #ffaa6b; }
@@ -81,11 +81,11 @@
         #signal-container {
             width: 100%;
             max-width: 400px;
-            height: 120px;
+            height: 80px;
             background: rgba(255,255,255,0.05);
             border-radius: 12px;
             overflow: hidden;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         }
         #signal-canvas { width: 100%; height: 100%; }
         
@@ -160,7 +160,6 @@
 <body>
     <a href="index.html" class="back-link">←</a>
     <h1>❤️ Heart Rate Monitor</h1>
-    <p class="subtitle">Face detection + forehead tracking</p>
     
     <div id="video-container">
         <video id="video" autoplay playsinline></video>
@@ -179,7 +178,6 @@
     </div>
     
     <div id="bpm-display">-- <span>BPM</span></div>
-    <div id="confidence"></div>
     
     <div id="signal-container">
         <canvas id="signal-canvas"></canvas>
@@ -189,7 +187,7 @@
     
     <div class="controls">
         <button id="reset-btn">Reset</button>
-        <button id="torch-btn">💡 Light</button>
+        <button id="torch-btn">💡</button>
         <button id="amplify-btn">🔍 Amplify</button>
     </div>
 
