@@ -344,19 +344,22 @@
             if (earBaseline === null) {
                 earSamples.push(ear);
                 if (earSamples.length >= CALIBRATION_SAMPLES) {
-                    // Use 80th percentile as baseline (eyes open)
-                    earSamples.sort((a, b) => a - b);
-                    earBaseline = earSamples[Math.floor(earSamples.length * 0.8)];
-                    earMin = earSamples[Math.floor(earSamples.length * 0.1)];
+                    // Use maximum as baseline (eyes fully open)
+                    earBaseline = Math.max(...earSamples);
                     statusEl.textContent = `Calibrated! Baseline EAR: ${earBaseline.toFixed(3)}. Start blinking!`;
                 } else {
-                    statusEl.textContent = `Calibrating... keep eyes open (${earSamples.length}/${CALIBRATION_SAMPLES})`;
+                    statusEl.textContent = `Calibrating... keep eyes WIDE open (${earSamples.length}/${CALIBRATION_SAMPLES})`;
                 }
                 return;
             }
             
-            // Detect blink: EAR drops below 60% of baseline
-            const threshold = earBaseline * 0.6;
+            // Continuously update baseline if we see higher EAR (eyes more open)
+            if (ear > earBaseline) {
+                earBaseline = earBaseline * 0.95 + ear * 0.05;
+            }
+            
+            // Detect blink: EAR drops below 75% of baseline
+            const threshold = earBaseline * 0.75;
             const blinkDetected = ear < threshold;
             
             const now = performance.now();
