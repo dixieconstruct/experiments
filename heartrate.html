@@ -620,9 +620,15 @@
             }
             
             // Clear overlay for next frame (or show amplified if enabled)
-            if (amplifyMode && currentFace) {
-                // Simplified Eulerian magnification with spatial smoothing
-                const ampFactor = 50; // Reduced for subtlety
+            if (amplifyMode && currentFace && smoothedROI) {
+                // Simplified Eulerian magnification - only on face region
+                const ampFactor = 60;
+                
+                // Get face bounds (with some padding)
+                const faceLeft = Math.max(0, smoothedROI.faceX - 20);
+                const faceTop = Math.max(0, smoothedROI.faceY - 40);
+                const faceRight = Math.min(containerW, smoothedROI.faceX + smoothedROI.faceW + 20);
+                const faceBottom = Math.min(containerH, smoothedROI.faceY + smoothedROI.faceH + 20);
                 
                 // Track temporal changes at reduced resolution
                 if (!window.ampBuffer) {
@@ -665,32 +671,43 @@
                         ampMap[i] = (fastAvg - slowAvg);
                     }
                     
-                    // Apply with bilinear interpolation for smooth result
+                    // Apply with bilinear interpolation - ONLY within face region
                     const amplified = overlayCtx.createImageData(containerW, containerH);
                     for (let y = 0; y < containerH; y++) {
                         for (let x = 0; x < containerW; x++) {
-                            // Bilinear interpolation of amplification
-                            const bx = x / blockSize - 0.5;
-                            const by = y / blockSize - 0.5;
-                            const x0 = Math.max(0, Math.floor(bx));
-                            const y0 = Math.max(0, Math.floor(by));
-                            const x1 = Math.min(cols - 1, x0 + 1);
-                            const y1 = Math.min(rows - 1, y0 + 1);
-                            const fx = bx - x0;
-                            const fy = by - y0;
-                            
-                            const amp = 
-                                ampMap[y0 * cols + x0] * (1 - fx) * (1 - fy) +
-                                ampMap[y0 * cols + x1] * fx * (1 - fy) +
-                                ampMap[y1 * cols + x0] * (1 - fx) * fy +
-                                ampMap[y1 * cols + x1] * fx * fy;
-                            
                             const srcIdx = (y * containerW + x) * 4;
-                            // Subtle color shift: amplify as slight red/pink flush
-                            const colorAmp = amp * ampFactor;
-                            amplified.data[srcIdx] = Math.max(0, Math.min(255, imageData.data[srcIdx] + colorAmp * 0.8)); // More red when blood flows
-                            amplified.data[srcIdx + 1] = Math.max(0, Math.min(255, imageData.data[srcIdx + 1] + colorAmp * 0.2)); // Slight green
-                            amplified.data[srcIdx + 2] = Math.max(0, Math.min(255, imageData.data[srcIdx + 2] + colorAmp * 0.3)); // Slight blue/pink
+                            
+                            // Check if inside face region
+                            const inFace = x >= faceLeft && x <= faceRight && y >= faceTop && y <= faceBottom;
+                            
+                            if (inFace) {
+                                // Bilinear interpolation of amplification
+                                const bx = x / blockSize - 0.5;
+                                const by = y / blockSize - 0.5;
+                                const x0 = Math.max(0, Math.floor(bx));
+                                const y0 = Math.max(0, Math.floor(by));
+                                const x1 = Math.min(cols - 1, x0 + 1);
+                                const y1 = Math.min(rows - 1, y0 + 1);
+                                const fx = bx - x0;
+                                const fy = by - y0;
+                                
+                                const amp = 
+                                    ampMap[y0 * cols + x0] * (1 - fx) * (1 - fy) +
+                                    ampMap[y0 * cols + x1] * fx * (1 - fy) +
+                                    ampMap[y1 * cols + x0] * (1 - fx) * fy +
+                                    ampMap[y1 * cols + x1] * fx * fy;
+                                
+                                // Subtle color shift: amplify as slight red/pink flush
+                                const colorAmp = amp * ampFactor;
+                                amplified.data[srcIdx] = Math.max(0, Math.min(255, imageData.data[srcIdx] + colorAmp * 0.8));
+                                amplified.data[srcIdx + 1] = Math.max(0, Math.min(255, imageData.data[srcIdx + 1] + colorAmp * 0.2));
+                                amplified.data[srcIdx + 2] = Math.max(0, Math.min(255, imageData.data[srcIdx + 2] + colorAmp * 0.3));
+                            } else {
+                                // Outside face: copy original
+                                amplified.data[srcIdx] = imageData.data[srcIdx];
+                                amplified.data[srcIdx + 1] = imageData.data[srcIdx + 1];
+                                amplified.data[srcIdx + 2] = imageData.data[srcIdx + 2];
+                            }
                             amplified.data[srcIdx + 3] = 255;
                         }
                     }
