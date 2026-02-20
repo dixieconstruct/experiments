@@ -366,11 +366,12 @@
             // Mirror X for display (camera is mirrored)
             const mirrorX = 1 - adjX - adjW;
             
-            // Forehead region: top 25% of face, middle 40%
-            const roiW = adjW * 0.4;
-            const roiH = adjH * 0.2;
+            // Forehead region: top of face, middle 50%
+            // MediaPipe face box starts at hairline, so forehead is very top
+            const roiW = adjW * 0.5;
+            const roiH = adjH * 0.15;
             const roiX = mirrorX + (adjW - roiW) / 2;
-            const roiY = adjY + adjH * 0.08;
+            const roiY = adjY - adjH * 0.05; // Above the face box top edge
             
             return {
                 x: roiX * containerW,
