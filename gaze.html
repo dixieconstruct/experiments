@@ -233,6 +233,16 @@
         const RIGHT_EYE_OUTER = 362;
         const RIGHT_EYE_INNER = 263;
         
+        // Head pose landmarks
+        const NOSE_TIP = 1;
+        const FOREHEAD = 10;
+        const CHIN = 152;
+        const LEFT_CHEEK = 234;
+        const RIGHT_CHEEK = 454;
+        
+        // Reference head pose (captured during calibration)
+        let refHeadPose = null;
+        
         // Initialize
         async function init() {
             statusEl.textContent = 'Loading face mesh model...';
@@ -283,6 +293,29 @@
             }
             
             const landmarks = results.multiFaceLandmarks[0];
+            
+            // Compute head pose (position and rotation)
+            const nose = landmarks[NOSE_TIP];
+            const forehead = landmarks[FOREHEAD];
+            const chin = landmarks[CHIN];
+            const leftCheek = landmarks[LEFT_CHEEK];
+            const rightCheek = landmarks[RIGHT_CHEEK];
+            
+            // Head position (nose as reference)
+            const headX = nose.x;
+            const headY = nose.y;
+            
+            // Head rotation: yaw (left-right) from cheek distance ratio
+            const leftDist = Math.abs(nose.x - leftCheek.x);
+            const rightDist = Math.abs(nose.x - rightCheek.x);
+            const yaw = (rightDist - leftDist) / (rightDist + leftDist); // -1 to 1
+            
+            // Head rotation: pitch (up-down) from forehead-chin vs nose position
+            const faceHeight = Math.abs(chin.y - forehead.y);
+            const noseRatio = (nose.y - forehead.y) / faceHeight;
+            const pitch = (noseRatio - 0.35) * 2; // Centered around typical ratio
+            
+            const headPose = { x: headX, y: headY, yaw, pitch };
             
             // Get iris positions relative to eye corners (normalized 0-1)
             const leftIris = landmarks[LEFT_IRIS_CENTER];
@@ -347,10 +380,25 @@
             
             ctx.restore();
             
-            // If calibrated, estimate gaze
-            if (isCalibrated && model) {
-                const gazeX = model.xOffset + model.xScaleIris * irisX + model.xScaleIrisY * irisY;
-                const gazeY = model.yOffset + model.yScaleIris * irisY + model.yScaleIrisX * irisX;
+            // If calibrated, estimate gaze with head pose compensation
+            if (isCalibrated && model && refHeadPose) {
+                // Compensate iris position for head movement
+                const headDeltaX = headPose.x - refHeadPose.x;
+                const headDeltaY = headPose.y - refHeadPose.y;
+                const yawDelta = headPose.yaw - refHeadPose.yaw;
+                const pitchDelta = headPose.pitch - refHeadPose.pitch;
+                
+                // Adjust iris readings based on head movement
+                // When head turns right, iris appears more left, so we compensate
+                const compensatedIrisX = irisX - yawDelta * 0.5;
+                const compensatedIrisY = irisY - pitchDelta * 0.5;
+                
+                // Also compensate for head translation (moving closer/further changes apparent gaze)
+                const headCompX = headDeltaX * window.innerWidth * 1.5;
+                const headCompY = headDeltaY * window.innerHeight * 1.5;
+                
+                const gazeX = model.xOffset + model.xScaleIris * compensatedIrisX + model.xScaleIrisY * compensatedIrisY - headCompX;
+                const gazeY = model.yOffset + model.yScaleIris * compensatedIrisY + model.yScaleIrisX * compensatedIrisX - headCompY;
                 
                 // Smooth
                 smoothedGaze.x = smoothedGaze.x * (1 - SMOOTHING) + gazeX * SMOOTHING;
@@ -364,17 +412,18 @@
                 gazeDot.style.top = clampedY + 'px';
                 
                 dbgGaze.textContent = `${Math.round(clampedX)}, ${Math.round(clampedY)}`;
-                statusEl.textContent = 'Tracking gaze...';
+                statusEl.textContent = `Tracking (yaw: ${yawDelta.toFixed(2)}, pitch: ${pitchDelta.toFixed(2)})`;
             } else if (!isCalibrated) {
-                // Store current iris data for calibration
+                // Store current iris data and head pose for calibration
                 window.currentIris = { x: irisX, y: irisY };
+                window.currentHeadPose = headPose;
             }
         }
         
         // Calibration
         function setupCalibration() {
-            // 9-point calibration grid
-            const padding = 50;
+            // 9-point calibration grid (moved inward to avoid UI elements)
+            const padding = 100; // Increased from 50
             const positions = [
                 { x: padding, y: padding },
                 { x: window.innerWidth / 2, y: padding },
@@ -382,9 +431,9 @@
                 { x: padding, y: window.innerHeight / 2 },
                 { x: window.innerWidth / 2, y: window.innerHeight / 2 },
                 { x: window.innerWidth - padding, y: window.innerHeight / 2 },
-                { x: padding, y: window.innerHeight - padding },
-                { x: window.innerWidth / 2, y: window.innerHeight - padding },
-                { x: window.innerWidth - padding, y: window.innerHeight - padding },
+                { x: padding, y: window.innerHeight - padding - 50 }, // Extra offset for bottom buttons
+                { x: window.innerWidth / 2, y: window.innerHeight - padding - 50 },
+                { x: window.innerWidth - padding - 100, y: window.innerHeight - padding - 50 }, // Avoid video preview
             ];
             
             // Create calibration points
@@ -423,6 +472,11 @@
                 irisY: window.currentIris.y
             });
             
+            // Capture head pose at middle calibration point as reference
+            if (index === 4 && window.currentHeadPose) {
+                refHeadPose = { ...window.currentHeadPose };
+            }
+            
             point.classList.remove('active');
             point.classList.add('done');
             
@@ -431,7 +485,10 @@
             if (currentCalPoint < calibrationPoints.length) {
                 calibrationPoints[currentCalPoint].classList.add('active');
             } else {
-                // Calibration complete
+                // Calibration complete - use average head pose if center wasn't captured
+                if (!refHeadPose && window.currentHeadPose) {
+                    refHeadPose = { ...window.currentHeadPose };
+                }
                 computeModel();
                 calibrationPoints.forEach(p => p.remove());
                 calibrationPoints = [];
@@ -508,6 +565,7 @@
         recalibrateBtn.addEventListener('click', () => {
             isCalibrated = false;
             model = null;
+            refHeadPose = null;
             calibrationDiv.classList.remove('hidden');
         });
         
