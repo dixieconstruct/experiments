@@ -168,7 +168,7 @@
     <div class="controls">
         <button id="reset-btn">Reset</button>
         <button id="torch-btn">💡</button>
-        <button id="amplify-btn">🔍 Amplify</button>
+        <button id="amplify-btn">📊 Autocorr</button>
     </div>
 
     <script>
@@ -200,6 +200,8 @@
         let isRunning = false;
         let torchOn = false;
         let amplifyMode = false;
+        let showAutocorr = false;
+        let lastAutocorr = null;
         let colorBuffer = [];
         const COLOR_BUFFER_SIZE = 30;
         let smoothedROI = null;
@@ -278,14 +280,11 @@
             }
         }
         
-        // Toggle amplification mode
+        // Toggle autocorrelation view
         amplifyBtn.addEventListener('click', () => {
-            amplifyMode = !amplifyMode;
-            amplifyBtn.classList.toggle('active', amplifyMode);
-            colorBuffer = [];
-            if (amplifyMode) {
-                statusEl.textContent = 'Color amplification ON - watch for pulse!';
-            }
+            showAutocorr = !showAutocorr;
+            amplifyBtn.classList.toggle('active', showAutocorr);
+            amplifyBtn.textContent = showAutocorr ? '📈 Signal' : '📊 Autocorr';
         });
         
         // Toggle torch
@@ -619,117 +618,8 @@
                 trackPoints = null;
             }
             
-            // Clear overlay for next frame (or show amplified if enabled)
-            if (amplifyMode && currentFace && smoothedROI) {
-                // Eulerian-style magnification on entire face
-                const ampFactor = 100;
-                
-                // Use face bounds (larger area like MIT paper)
-                const faceLeft = Math.max(0, Math.floor(smoothedROI.faceX));
-                const faceTop = Math.max(0, Math.floor(smoothedROI.faceY - smoothedROI.faceH * 0.2));
-                const faceRight = Math.min(containerW, Math.floor(smoothedROI.faceX + smoothedROI.faceW));
-                const faceBottom = Math.min(containerH, Math.floor(smoothedROI.faceY + smoothedROI.faceH));
-                
-                // Track temporal green channel across face
-                if (!window.ampBuffer) {
-                    window.ampBuffer = { pixels: [], size: 30 };
-                }
-                
-                // 12x12 grid across face for smoother result
-                const gridSize = 12;
-                const cellW = (faceRight - faceLeft) / gridSize;
-                const cellH = (faceBottom - faceTop) / gridSize;
-                const frame = new Float32Array(gridSize * gridSize);
-                
-                for (let gy = 0; gy < gridSize; gy++) {
-                    for (let gx = 0; gx < gridSize; gx++) {
-                        let sum = 0, count = 0;
-                        const startX = Math.floor(faceLeft + gx * cellW);
-                        const startY = Math.floor(faceTop + gy * cellH);
-                        const endX = Math.floor(faceLeft + (gx + 1) * cellW);
-                        const endY = Math.floor(faceTop + (gy + 1) * cellH);
-                        
-                        for (let y = startY; y < endY && y < containerH; y++) {
-                            for (let x = startX; x < endX && x < containerW; x++) {
-                                const idx = (y * containerW + x) * 4;
-                                // Use green channel (best for PPG)
-                                sum += imageData.data[idx + 1];
-                                count++;
-                            }
-                        }
-                        frame[gy * gridSize + gx] = count > 0 ? sum / count : 0;
-                    }
-                }
-                
-                window.ampBuffer.pixels.push(frame);
-                if (window.ampBuffer.pixels.length > window.ampBuffer.size) {
-                    window.ampBuffer.pixels.shift();
-                }
-                
-                if (window.ampBuffer.pixels.length >= 15) {
-                    // Temporal bandpass for each cell
-                    const ampMap = new Float32Array(gridSize * gridSize);
-                    
-                    for (let i = 0; i < gridSize * gridSize; i++) {
-                        const history = window.ampBuffer.pixels.map(f => f[i]);
-                        
-                        // Bandpass: remove slow drift, keep heartbeat frequencies
-                        const mean = history.reduce((a, b) => a + b, 0) / history.length;
-                        const recent = history.slice(-5).reduce((a, b) => a + b, 0) / 5;
-                        ampMap[i] = recent - mean;
-                    }
-                    
-                    // Apply amplification with smooth interpolation
-                    const amplified = overlayCtx.createImageData(containerW, containerH);
-                    
-                    for (let y = 0; y < containerH; y++) {
-                        for (let x = 0; x < containerW; x++) {
-                            const srcIdx = (y * containerW + x) * 4;
-                            
-                            // Check if inside face region
-                            const inFace = x >= faceLeft && x < faceRight && y >= faceTop && y < faceBottom;
-                            
-                            if (inFace) {
-                                // Bilinear interpolation within grid
-                                const gx = ((x - faceLeft) / cellW) - 0.5;
-                                const gy = ((y - faceTop) / cellH) - 0.5;
-                                const x0 = Math.max(0, Math.floor(gx));
-                                const y0 = Math.max(0, Math.floor(gy));
-                                const x1 = Math.min(gridSize - 1, x0 + 1);
-                                const y1 = Math.min(gridSize - 1, y0 + 1);
-                                const fx = Math.max(0, Math.min(1, gx - x0));
-                                const fy = Math.max(0, Math.min(1, gy - y0));
-                                
-                                const amp = 
-                                    ampMap[y0 * gridSize + x0] * (1 - fx) * (1 - fy) +
-                                    ampMap[y0 * gridSize + x1] * fx * (1 - fy) +
-                                    ampMap[y1 * gridSize + x0] * (1 - fx) * fy +
-                                    ampMap[y1 * gridSize + x1] * fx * fy;
-                                
-                                // Simple intensity amplification (like MIT paper)
-                                // Add same value to all channels = brightness change
-                                const boost = amp * ampFactor;
-                                amplified.data[srcIdx] = Math.max(0, Math.min(255, imageData.data[srcIdx] + boost));
-                                amplified.data[srcIdx + 1] = Math.max(0, Math.min(255, imageData.data[srcIdx + 1] + boost));
-                                amplified.data[srcIdx + 2] = Math.max(0, Math.min(255, imageData.data[srcIdx + 2] + boost));
-                            } else {
-                                // Outside face: copy original
-                                amplified.data[srcIdx] = imageData.data[srcIdx];
-                                amplified.data[srcIdx + 1] = imageData.data[srcIdx + 1];
-                                amplified.data[srcIdx + 2] = imageData.data[srcIdx + 2];
-                            }
-                            amplified.data[srcIdx + 3] = 255;
-                        }
-                    }
-                    
-                    overlayCtx.putImageData(amplified, 0, 0);
-                } else {
-                    overlayCtx.clearRect(0, 0, containerW, containerH);
-                }
-            } else {
-                overlayCtx.clearRect(0, 0, containerW, containerH);
-                if (window.ampBuffer) window.ampBuffer.pixels = [];
-            }
+            // Clear overlay
+            overlayCtx.clearRect(0, 0, containerW, containerH);
             
             drawSignal();
             requestAnimationFrame(processFrame);
@@ -844,12 +734,15 @@
             const n = signal.length;
             if (n < 60) return null;
             
-            // Min/max lag for 42-200 BPM
-            const minLag = Math.floor(sampleRate * 60 / 200);
-            const maxLag = Math.ceil(sampleRate * 60 / 42);
+            // Min/max lag for 50-120 BPM (our valid range)
+            const minLag = Math.floor(sampleRate * 60 / 120);
+            const maxLag = Math.ceil(sampleRate * 60 / 50);
             
             let bestLag = minLag;
             let bestCorr = -Infinity;
+            
+            // Store full autocorrelation for visualization
+            const autocorr = [];
             
             // Compute autocorrelation
             for (let lag = minLag; lag <= Math.min(maxLag, n / 2); lag++) {
@@ -861,11 +754,16 @@
                 }
                 corr /= count;
                 
+                autocorr.push({ lag, corr, bpm: 60 / (lag / sampleRate) });
+                
                 if (corr > bestCorr) {
                     bestCorr = corr;
                     bestLag = lag;
                 }
             }
+            
+            // Store for visualization
+            lastAutocorr = { data: autocorr, bestLag, sampleRate };
             
             const period = bestLag / sampleRate;
             return 60 / period;
@@ -880,25 +778,73 @@
             ctx.fillStyle = 'rgba(15, 15, 26, 0.4)';
             ctx.fillRect(0, 0, w, h);
             
-            const signal = filteredSignal.length > 0 ? filteredSignal : rawSignal;
-            if (signal.length < 2) return;
-            
-            const min = Math.min(...signal);
-            const max = Math.max(...signal);
-            const range = max - min || 1;
-            
-            // Waveform
-            ctx.beginPath();
-            ctx.strokeStyle = '#ff6b6b';
-            ctx.lineWidth = 2;
-            
-            for (let i = 0; i < signal.length; i++) {
-                const x = (i / signal.length) * w;
-                const y = h - ((signal[i] - min) / range) * h * 0.8 - h * 0.1;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
+            if (showAutocorr && lastAutocorr && lastAutocorr.data.length > 0) {
+                // Draw autocorrelation
+                const data = lastAutocorr.data;
+                const minCorr = Math.min(...data.map(d => d.corr));
+                const maxCorr = Math.max(...data.map(d => d.corr));
+                const range = maxCorr - minCorr || 1;
+                
+                // Find best (peak)
+                const bestIdx = data.findIndex(d => d.lag === lastAutocorr.bestLag);
+                
+                // Autocorrelation curve
+                ctx.beginPath();
+                ctx.strokeStyle = '#6bff6b';
+                ctx.lineWidth = 2;
+                
+                for (let i = 0; i < data.length; i++) {
+                    const x = (i / data.length) * w;
+                    const y = h - ((data[i].corr - minCorr) / range) * h * 0.8 - h * 0.1;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+                
+                // Mark the peak
+                if (bestIdx >= 0) {
+                    const peakX = (bestIdx / data.length) * w;
+                    const peakY = h - ((data[bestIdx].corr - minCorr) / range) * h * 0.8 - h * 0.1;
+                    
+                    ctx.beginPath();
+                    ctx.arc(peakX, peakY, 5, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ff6b6b';
+                    ctx.fill();
+                    
+                    // Label with BPM
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '10px sans-serif';
+                    ctx.fillText(`${Math.round(data[bestIdx].bpm)} BPM`, peakX + 8, peakY - 5);
+                }
+                
+                // X-axis labels (BPM range)
+                ctx.fillStyle = '#666';
+                ctx.font = '9px sans-serif';
+                ctx.fillText('120', 2, h - 2);
+                ctx.fillText('50 BPM', w - 35, h - 2);
+                
+            } else {
+                // Draw PPG signal
+                const signal = filteredSignal.length > 0 ? filteredSignal : rawSignal;
+                if (signal.length < 2) return;
+                
+                const min = Math.min(...signal);
+                const max = Math.max(...signal);
+                const range = max - min || 1;
+                
+                // Waveform
+                ctx.beginPath();
+                ctx.strokeStyle = '#ff6b6b';
+                ctx.lineWidth = 2;
+                
+                for (let i = 0; i < signal.length; i++) {
+                    const x = (i / signal.length) * w;
+                    const y = h - ((signal[i] - min) / range) * h * 0.8 - h * 0.1;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
             }
-            ctx.stroke();
             
             // Zero line
             ctx.strokeStyle = 'rgba(255,255,255,0.1)';
