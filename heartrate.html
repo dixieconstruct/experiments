@@ -622,7 +622,7 @@
             // Clear overlay for next frame (or show amplified if enabled)
             if (amplifyMode && currentFace) {
                 // Simplified Eulerian magnification with spatial smoothing
-                const ampFactor = 80; // Increased amplification
+                const ampFactor = 50; // Reduced for subtlety
                 
                 // Track temporal changes at reduced resolution
                 if (!window.ampBuffer) {
@@ -686,10 +686,11 @@
                                 ampMap[y1 * cols + x1] * fx * fy;
                             
                             const srcIdx = (y * containerW + x) * 4;
-                            // Color mode: amplify as green/red shift (like blood flush)
-                            amplified.data[srcIdx] = Math.max(0, Math.min(255, imageData.data[srcIdx] - amp * ampFactor * 0.5)); // Less red when blood
-                            amplified.data[srcIdx + 1] = Math.max(0, Math.min(255, imageData.data[srcIdx + 1] + amp * ampFactor)); // More green
-                            amplified.data[srcIdx + 2] = Math.max(0, Math.min(255, imageData.data[srcIdx + 2] - amp * ampFactor * 0.3)); // Less blue
+                            // Subtle color shift: amplify as slight red/pink flush
+                            const colorAmp = amp * ampFactor;
+                            amplified.data[srcIdx] = Math.max(0, Math.min(255, imageData.data[srcIdx] + colorAmp * 0.8)); // More red when blood flows
+                            amplified.data[srcIdx + 1] = Math.max(0, Math.min(255, imageData.data[srcIdx + 1] + colorAmp * 0.2)); // Slight green
+                            amplified.data[srcIdx + 2] = Math.max(0, Math.min(255, imageData.data[srcIdx + 2] + colorAmp * 0.3)); // Slight blue/pink
                             amplified.data[srcIdx + 3] = 255;
                         }
                     }
