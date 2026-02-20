@@ -567,10 +567,16 @@
                 roiBox.style.height = displayROI.height + 'px';
                 
                 // Sample ROI - focus on center for best signal
-                const sampleX = Math.floor(displayROI.x + displayROI.width * 0.2);
-                const sampleY = Math.floor(displayROI.y + displayROI.height * 0.2);
-                const sampleW = Math.floor(displayROI.width * 0.6);
-                const sampleH = Math.floor(displayROI.height * 0.6);
+                // Clamp to canvas bounds
+                const roiX = Math.max(0, displayROI.x);
+                const roiY = Math.max(0, displayROI.y);
+                const roiRight = Math.min(containerW, displayROI.x + displayROI.width);
+                const roiBottom = Math.min(containerH, displayROI.y + displayROI.height);
+                
+                const sampleX = Math.floor(roiX + (roiRight - roiX) * 0.2);
+                const sampleY = Math.floor(roiY + (roiBottom - roiY) * 0.2);
+                const sampleW = Math.floor((roiRight - roiX) * 0.6);
+                const sampleH = Math.floor((roiBottom - roiY) * 0.6);
                 
                 let greenSum = 0, redSum = 0, count = 0;
                 
@@ -608,8 +614,9 @@
                 faceBox.style.display = 'none';
                 roiBox.style.display = 'none';
                 statusEl.textContent = 'Looking for face...';
-                lastTemplate = null;
-                templatePos = null;
+                smoothedROI = null;
+                prevGray = null;
+                trackPoints = null;
             }
             
             // Clear overlay for next frame (or show amplified if enabled)
