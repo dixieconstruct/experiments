@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Analog Synth</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a1a;
+            color: #e0e0e0;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .back-link {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            color: #888;
+            text-decoration: none;
+            font-size: 1.2em;
+            z-index: 100;
+        }
+        
+        h1 {
+            font-size: 1.5em;
+            font-weight: 300;
+            margin-bottom: 20px;
+            color: #ff6b35;
+        }
+        
+        .synth {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            max-width: 900px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        
+        .module {
+            background: #252525;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #333;
+        }
+        
+        .module h2 {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #ff6b35;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+        
+        .param {
+            margin-bottom: 12px;
+        }
+        
+        .param:last-child {
+            margin-bottom: 0;
+        }
+        
+        .param label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8em;
+            color: #888;
+            margin-bottom: 5px;
+        }
+        
+        .param label span {
+            color: #ff6b35;
+            font-family: monospace;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            -webkit-appearance: none;
+            background: #333;
+            border-radius: 3px;
+            outline: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #ff6b35;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        
+        select {
+            width: 100%;
+            padding: 8px;
+            background: #333;
+            color: #e0e0e0;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85em;
+            cursor: pointer;
+        }
+        
+        .keyboard {
+            display: flex;
+            gap: 3px;
+            padding: 15px;
+            background: #252525;
+            border-radius: 12px;
+            max-width: 900px;
+            width: 100%;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .key {
+            width: 45px;
+            height: 120px;
+            background: linear-gradient(to bottom, #f5f5f5, #d0d0d0);
+            border-radius: 0 0 6px 6px;
+            cursor: pointer;
+            position: relative;
+            transition: background 0.05s;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 8px;
+            font-size: 0.7em;
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .key:active, .key.active {
+            background: linear-gradient(to bottom, #ff6b35, #cc5528);
+            color: #fff;
+        }
+        
+        .key.black {
+            width: 30px;
+            height: 75px;
+            background: linear-gradient(to bottom, #333, #1a1a1a);
+            margin: 0 -15px;
+            z-index: 1;
+            color: #666;
+        }
+        
+        .key.black:active, .key.black.active {
+            background: linear-gradient(to bottom, #ff6b35, #cc5528);
+        }
+        
+        .help {
+            margin-top: 15px;
+            font-size: 0.75em;
+            color: #666;
+            text-align: center;
+        }
+        
+        @media (max-width: 600px) {
+            .key { width: 35px; height: 90px; }
+            .key.black { width: 24px; height: 55px; margin: 0 -12px; }
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">←</a>
+    <h1>Analog Synth</h1>
+    
+    <div class="synth">
+        <div class="module">
+            <h2>Oscillator</h2>
+            <div class="param">
+                <label>Waveform</label>
+                <select id="oscType">
+                    <option value="sine">Sine</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="sawtooth" selected>Sawtooth</option>
+                    <option value="square">Square</option>
+                </select>
+            </div>
+            <div class="param">
+                <label>Detune <span id="detuneVal">0</span>¢</label>
+                <input type="range" id="detune" min="-100" max="100" value="0">
+            </div>
+        </div>
+        
+        <div class="module">
+            <h2>LFO</h2>
+            <div class="param">
+                <label>Rate <span id="lfoRateVal">2.0</span>Hz</label>
+                <input type="range" id="lfoRate" min="0.1" max="20" step="0.1" value="2">
+            </div>
+            <div class="param">
+                <label>Depth <span id="lfoDepthVal">0</span></label>
+                <input type="range" id="lfoDepth" min="0" max="100" value="0">
+            </div>
+            <div class="param">
+                <label>Target</label>
+                <select id="lfoTarget">
+                    <option value="pitch">Pitch</option>
+                    <option value="filter">Filter</option>
+                    <option value="amp">Amplitude</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="module">
+            <h2>Envelope (ADSR)</h2>
+            <div class="param">
+                <label>Attack <span id="attackVal">0.01</span>s</label>
+                <input type="range" id="attack" min="0.01" max="2" step="0.01" value="0.01">
+            </div>
+            <div class="param">
+                <label>Decay <span id="decayVal">0.2</span>s</label>
+                <input type="range" id="decay" min="0.01" max="2" step="0.01" value="0.2">
+            </div>
+            <div class="param">
+                <label>Sustain <span id="sustainVal">0.7</span></label>
+                <input type="range" id="sustain" min="0" max="1" step="0.01" value="0.7">
+            </div>
+            <div class="param">
+                <label>Release <span id="releaseVal">0.3</span>s</label>
+                <input type="range" id="release" min="0.01" max="3" step="0.01" value="0.3">
+            </div>
+        </div>
+        
+        <div class="module">
+            <h2>Filter</h2>
+            <div class="param">
+                <label>Type</label>
+                <select id="filterType">
+                    <option value="lowpass">Low Pass</option>
+                    <option value="highpass">High Pass</option>
+                    <option value="bandpass" selected>Band Pass</option>
+                    <option value="lowshelf">Low Shelf</option>
+                    <option value="highshelf">High Shelf</option>
+                </select>
+            </div>
+            <div class="param">
+                <label>Cutoff <span id="cutoffVal">2000</span>Hz</label>
+                <input type="range" id="cutoff" min="50" max="15000" value="2000">
+            </div>
+            <div class="param">
+                <label>Q / Resonance <span id="qVal">1.0</span></label>
+                <input type="range" id="q" min="0.1" max="20" step="0.1" value="1">
+            </div>
+        </div>
+        
+        <div class="module">
+            <h2>Distortion</h2>
+            <div class="param">
+                <label>Drive <span id="driveVal">0</span></label>
+                <input type="range" id="drive" min="0" max="100" value="0">
+            </div>
+        </div>
+        
+        <div class="module">
+            <h2>Master</h2>
+            <div class="param">
+                <label>Volume <span id="volumeVal">50</span>%</label>
+                <input type="range" id="volume" min="0" max="100" value="50">
+            </div>
+        </div>
+    </div>
+    
+    <div class="keyboard" id="keyboard"></div>
+    <p class="help">Play with keyboard: A-K = white keys, W-U = black keys</p>
+
+    <script>
+        // Audio context
+        let audioCtx = null;
+        let masterGain = null;
+        let lfo = null;
+        let lfoGain = null;
+        let distortion = null;
+        let filter = null;
+        
+        const activeVoices = {};
+        
+        // Note frequencies
+        const notes = [
+            { note: 'C4', freq: 261.63, key: 'a', black: false },
+            { note: 'C#4', freq: 277.18, key: 'w', black: true },
+            { note: 'D4', freq: 293.66, key: 's', black: false },
+            { note: 'D#4', freq: 311.13, key: 'e', black: true },
+            { note: 'E4', freq: 329.63, key: 'd', black: false },
+            { note: 'F4', freq: 349.23, key: 'f', black: false },
+            { note: 'F#4', freq: 369.99, key: 't', black: true },
+            { note: 'G4', freq: 392.00, key: 'g', black: false },
+            { note: 'G#4', freq: 415.30, key: 'y', black: true },
+            { note: 'A4', freq: 440.00, key: 'h', black: false },
+            { note: 'A#4', freq: 466.16, key: 'u', black: true },
+            { note: 'B4', freq: 493.88, key: 'j', black: false },
+            { note: 'C5', freq: 523.25, key: 'k', black: false },
+        ];
+        
+        // Initialize audio
+        function initAudio() {
+            if (audioCtx) return;
+            
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Master gain
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.5;
+            
+            // Distortion
+            distortion = audioCtx.createWaveShaper();
+            distortion.curve = makeDistortionCurve(0);
+            
+            // Filter
+            filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 2000;
+            filter.Q.value = 1;
+            
+            // LFO
+            lfo = audioCtx.createOscillator();
+            lfo.frequency.value = 2;
+            lfoGain = audioCtx.createGain();
+            lfoGain.gain.value = 0;
+            lfo.connect(lfoGain);
+            lfo.start();
+            
+            // Connect chain: filter -> distortion -> master -> output
+            filter.connect(distortion);
+            distortion.connect(masterGain);
+            masterGain.connect(audioCtx.destination);
+        }
+        
+        // Distortion curve
+        function makeDistortionCurve(amount) {
+            const k = amount;
+            const samples = 44100;
+            const curve = new Float32Array(samples);
+            for (let i = 0; i < samples; i++) {
+                const x = (i * 2) / samples - 1;
+                curve[i] = (Math.PI + k) * x / (Math.PI + k * Math.abs(x));
+            }
+            return curve;
+        }
+        
+        // Play note
+        function playNote(freq, noteKey) {
+            if (activeVoices[noteKey]) return;
+            initAudio();
+            
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc.type = document.getElementById('oscType').value;
+            osc.frequency.value = freq;
+            osc.detune.value = parseFloat(document.getElementById('detune').value);
+            
+            // Connect LFO based on target
+            const lfoTarget = document.getElementById('lfoTarget').value;
+            const lfoDepth = parseFloat(document.getElementById('lfoDepth').value);
+            
+            if (lfoTarget === 'pitch' && lfoDepth > 0) {
+                lfoGain.connect(osc.frequency);
+                lfoGain.gain.value = lfoDepth;
+            } else if (lfoTarget === 'filter' && lfoDepth > 0) {
+                lfoGain.connect(filter.frequency);
+                lfoGain.gain.value = lfoDepth * 50;
+            } else if (lfoTarget === 'amp' && lfoDepth > 0) {
+                lfoGain.connect(gainNode.gain);
+                lfoGain.gain.value = lfoDepth / 200;
+            }
+            
+            // ADSR
+            const now = audioCtx.currentTime;
+            const attack = parseFloat(document.getElementById('attack').value);
+            const decay = parseFloat(document.getElementById('decay').value);
+            const sustain = parseFloat(document.getElementById('sustain').value);
+            
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(1, now + attack);
+            gainNode.gain.linearRampToValueAtTime(sustain, now + attack + decay);
+            
+            osc.connect(gainNode);
+            gainNode.connect(filter);
+            osc.start();
+            
+            activeVoices[noteKey] = { osc, gainNode };
+        }
+        
+        // Stop note
+        function stopNote(noteKey) {
+            const voice = activeVoices[noteKey];
+            if (!voice) return;
+            
+            const release = parseFloat(document.getElementById('release').value);
+            const now = audioCtx.currentTime;
+            
+            voice.gainNode.gain.cancelScheduledValues(now);
+            voice.gainNode.gain.setValueAtTime(voice.gainNode.gain.value, now);
+            voice.gainNode.gain.linearRampToValueAtTime(0, now + release);
+            
+            voice.osc.stop(now + release + 0.1);
+            delete activeVoices[noteKey];
+        }
+        
+        // Build keyboard UI
+        const keyboard = document.getElementById('keyboard');
+        notes.forEach((n, i) => {
+            const key = document.createElement('div');
+            key.className = 'key' + (n.black ? ' black' : '');
+            key.textContent = n.key.toUpperCase();
+            key.dataset.note = n.note;
+            key.dataset.key = n.key;
+            
+            key.addEventListener('mousedown', () => {
+                playNote(n.freq, n.note);
+                key.classList.add('active');
+            });
+            key.addEventListener('mouseup', () => {
+                stopNote(n.note);
+                key.classList.remove('active');
+            });
+            key.addEventListener('mouseleave', () => {
+                stopNote(n.note);
+                key.classList.remove('active');
+            });
+            key.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                playNote(n.freq, n.note);
+                key.classList.add('active');
+            });
+            key.addEventListener('touchend', () => {
+                stopNote(n.note);
+                key.classList.remove('active');
+            });
+            
+            keyboard.appendChild(key);
+        });
+        
+        // Keyboard input
+        document.addEventListener('keydown', (e) => {
+            if (e.repeat) return;
+            const note = notes.find(n => n.key === e.key.toLowerCase());
+            if (note) {
+                playNote(note.freq, note.note);
+                document.querySelector(`[data-key="${note.key}"]`)?.classList.add('active');
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            const note = notes.find(n => n.key === e.key.toLowerCase());
+            if (note) {
+                stopNote(note.note);
+                document.querySelector(`[data-key="${note.key}"]`)?.classList.remove('active');
+            }
+        });
+        
+        // Parameter updates
+        function bindParam(id, callback, displayId) {
+            const el = document.getElementById(id);
+            const display = document.getElementById(displayId || id + 'Val');
+            el.addEventListener('input', () => {
+                if (display) display.textContent = el.value;
+                callback(el.value);
+            });
+        }
+        
+        bindParam('detune', (v) => {}, 'detuneVal');
+        bindParam('lfoRate', (v) => { if (lfo) lfo.frequency.value = v; }, 'lfoRateVal');
+        bindParam('lfoDepth', (v) => {}, 'lfoDepthVal');
+        bindParam('attack', (v) => {}, 'attackVal');
+        bindParam('decay', (v) => {}, 'decayVal');
+        bindParam('sustain', (v) => {}, 'sustainVal');
+        bindParam('release', (v) => {}, 'releaseVal');
+        bindParam('cutoff', (v) => { if (filter) filter.frequency.value = v; }, 'cutoffVal');
+        bindParam('q', (v) => { if (filter) filter.Q.value = v; }, 'qVal');
+        bindParam('drive', (v) => { if (distortion) distortion.curve = makeDistortionCurve(v * 4); }, 'driveVal');
+        bindParam('volume', (v) => { if (masterGain) masterGain.gain.value = v / 100; }, 'volumeVal');
+        
+        document.getElementById('filterType').addEventListener('change', (e) => {
+            if (filter) filter.type = e.target.value;
+        });
+    </script>
+</body>
+</html>
