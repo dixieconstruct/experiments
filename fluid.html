@@ -165,36 +165,45 @@
                         dy = height[idx(x, y+1)] - height[idx(x, y-1)];
                     }
                     
-                    const threshold = 0.02;
-                    const strongThreshold = 0.06;
+                    const threshold = 0.015;
+                    const strongThreshold = 0.04;
+                    const veryStrongThreshold = 0.08;
                     
                     let char = '·';  // Default calm water
                     
-                    if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) {
+                    const absDx = Math.abs(dx);
+                    const absDy = Math.abs(dy);
+                    
+                    if (absDx < threshold && absDy < threshold) {
                         // Flat - show ripple based on height
-                        if (Math.abs(h) > 0.1) char = '~';
-                        else if (Math.abs(h) > 0.02) char = '∼';
+                        if (h > 0.08) char = '○';
+                        else if (h > 0.04) char = '◦';
+                        else if (h < -0.08) char = '•';
+                        else if (h < -0.04) char = '∘';
+                        else if (Math.abs(h) > 0.01) char = '~';
                         else char = '·';
-                    } else if (Math.abs(dx) > Math.abs(dy)) {
+                    } else if (absDx > absDy * 1.5) {
                         // Mostly horizontal slope
-                        if (dx > strongThreshold) char = '\\';
+                        if (dx > veryStrongThreshold) char = '《';
+                        else if (dx > strongThreshold) char = '\\';
                         else if (dx > threshold) char = '(';
+                        else if (dx < -veryStrongThreshold) char = '》';
                         else if (dx < -strongThreshold) char = '/';
                         else if (dx < -threshold) char = ')';
-                    } else {
+                    } else if (absDy > absDx * 1.5) {
                         // Mostly vertical slope
-                        if (dy > strongThreshold) char = '‾';
-                        else if (dy > threshold) char = '¯';
-                        else if (dy < -strongThreshold) char = '_';
+                        if (dy > veryStrongThreshold) char = '≡';
+                        else if (dy > strongThreshold) char = '=';
+                        else if (dy > threshold) char = '-';
+                        else if (dy < -veryStrongThreshold) char = '≡';
+                        else if (dy < -strongThreshold) char = '=';
                         else if (dy < -threshold) char = '-';
-                    }
-                    
-                    // Diagonal slopes
-                    if (Math.abs(dx) > threshold && Math.abs(dy) > threshold) {
-                        if (dx > 0 && dy > 0) char = '╲';
-                        else if (dx > 0 && dy < 0) char = '╱';
-                        else if (dx < 0 && dy > 0) char = '╱';
-                        else if (dx < 0 && dy < 0) char = '╲';
+                    } else {
+                        // Diagonal slopes
+                        if (dx > 0 && dy > 0) char = absDx > strongThreshold ? '╲' : '`';
+                        else if (dx > 0 && dy < 0) char = absDx > strongThreshold ? '╱' : '\'';
+                        else if (dx < 0 && dy > 0) char = absDx > strongThreshold ? '╱' : '\'';
+                        else if (dx < 0 && dy < 0) char = absDx > strongThreshold ? '╲' : '`';
                     }
                     
                     output += char;
@@ -250,8 +259,6 @@
         }
         
         init();
-        // Drop an initial rock
-        dropRock(35, 17, 4, 1);
         loop();
     </script>
 </body>
