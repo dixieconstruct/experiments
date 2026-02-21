@@ -160,7 +160,7 @@
 <body>
     <a href="index.html" class="back-link">←</a>
     <h1>👁️ Blink Morse</h1>
-    <p class="subtitle">Blink to type Morse code</p>
+    <p class="subtitle">Wink to type Morse code</p>
     
     <div id="video-container">
         <video id="video" autoplay playsinline></video>
@@ -176,11 +176,11 @@
     <div id="status">Loading face detection...</div>
     
     <div class="timing-help">
-        <h3>How to blink:</h3>
-        <div>• <span>Short blink</span> (< 300ms) = dot (·)</div>
-        <div>• <span>Long blink</span> (> 300ms) = dash (−)</div>
-        <div>• <span>Eyes open 600ms</span> = end letter</div>
-        <div>• <span>Eyes open 1.5s</span> = space</div>
+        <h3>How to wink:</h3>
+        <div>• <span>Left wink</span> = dot (·)</div>
+        <div>• <span>Right wink</span> = dash (−)</div>
+        <div>• <span>Both eyes open 600ms</span> = end letter</div>
+        <div>• <span>Both eyes open 1.5s</span> = space</div>
     </div>
     
     <div class="controls">
@@ -238,17 +238,19 @@
         let audioCtx = null;
         
         // Blink detection state
-        let isBlinking = false;
-        let blinkStartTime = 0;
+        let leftWinking = false;
+        let rightWinking = false;
+        let winkStartTime = 0;
         let eyesOpenTime = 0;
         let currentMorse = '';
         let output = '';
         let lastEAR = 0;
         
-        // Auto-calibration
-        let earBaseline = null;
-        let earMin = 1;
-        let earSamples = [];
+        // Auto-calibration (per eye)
+        let leftBaseline = null;
+        let rightBaseline = null;
+        let leftSamples = [];
+        let rightSamples = [];
         const CALIBRATION_SAMPLES = 60; // ~2 seconds of samples
         
         // Timing thresholds (ms)
@@ -278,7 +280,7 @@
             
             const leftEAR = eyeEAR(LEFT_EYE_TOP, LEFT_EYE_BOTTOM);
             const rightEAR = eyeEAR(RIGHT_EYE_TOP, RIGHT_EYE_BOTTOM);
-            return (leftEAR + rightEAR) / 2;
+            return { left: leftEAR, right: rightEAR, avg: (leftEAR + rightEAR) / 2 };
         }
         
         function playTone(duration) {
@@ -340,27 +342,33 @@
             const landmarks = results.multiFaceLandmarks[0];
             const ear = computeEAR(landmarks);
             
-            // Auto-calibration: collect samples with eyes open
-            if (earBaseline === null) {
-                earSamples.push(ear);
-                if (earSamples.length >= CALIBRATION_SAMPLES) {
-                    // Use maximum as baseline (eyes fully open)
-                    earBaseline = Math.max(...earSamples);
-                    statusEl.textContent = `Calibrated! Baseline EAR: ${earBaseline.toFixed(3)}. Start blinking!`;
+            // Auto-calibration: collect samples with eyes open (per eye)
+            if (leftBaseline === null) {
+                leftSamples.push(ear.left);
+                rightSamples.push(ear.right);
+                if (leftSamples.length >= CALIBRATION_SAMPLES) {
+                    leftBaseline = Math.max(...leftSamples);
+                    rightBaseline = Math.max(...rightSamples);
+                    statusEl.textContent = `Calibrated! Left wink=dot, Right wink=dash. Go!`;
                 } else {
-                    statusEl.textContent = `Calibrating... keep eyes WIDE open (${earSamples.length}/${CALIBRATION_SAMPLES})`;
+                    statusEl.textContent = `Calibrating... keep eyes WIDE open (${leftSamples.length}/${CALIBRATION_SAMPLES})`;
                 }
                 return;
             }
             
-            // Continuously update baseline if we see higher EAR (eyes more open)
-            if (ear > earBaseline) {
-                earBaseline = earBaseline * 0.95 + ear * 0.05;
-            }
+            // Continuously update baselines
+            if (ear.left > leftBaseline) leftBaseline = leftBaseline * 0.95 + ear.left * 0.05;
+            if (ear.right > rightBaseline) rightBaseline = rightBaseline * 0.95 + ear.right * 0.05;
             
-            // Detect blink: EAR drops below 75% of baseline
-            const threshold = earBaseline * 0.75;
-            const blinkDetected = ear < threshold;
+            // Detect winks: one eye closed, other open
+            const leftThreshold = leftBaseline * 0.7;
+            const rightThreshold = rightBaseline * 0.7;
+            const leftClosed = ear.left < leftThreshold;
+            const rightClosed = ear.right < rightThreshold;
+            
+            // Wink = one eye closed while other is relatively open
+            const leftWinkDetected = leftClosed && ear.right > rightThreshold * 0.9;
+            const rightWinkDetected = rightClosed && ear.left > leftThreshold * 0.9;
             
             const now = performance.now();
             
@@ -369,8 +377,18 @@
             ctx.scale(-1, 1);
             ctx.translate(-overlay.width, 0);
             
-            ctx.fillStyle = blinkDetected ? '#f00' : '#0f0';
-            [...LEFT_EYE_TOP, ...LEFT_EYE_BOTTOM, ...RIGHT_EYE_TOP, ...RIGHT_EYE_BOTTOM].forEach(idx => {
+            // Left eye (appears on right due to mirror)
+            ctx.fillStyle = leftClosed ? '#f00' : '#0f0';
+            [...LEFT_EYE_TOP, ...LEFT_EYE_BOTTOM].forEach(idx => {
+                const p = landmarks[idx];
+                ctx.beginPath();
+                ctx.arc(p.x * overlay.width, p.y * overlay.height, 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Right eye (appears on left due to mirror)
+            ctx.fillStyle = rightClosed ? '#f00' : '#0f0';
+            [...RIGHT_EYE_TOP, ...RIGHT_EYE_BOTTOM].forEach(idx => {
                 const p = landmarks[idx];
                 ctx.beginPath();
                 ctx.arc(p.x * overlay.width, p.y * overlay.height, 2, 0, Math.PI * 2);
@@ -378,14 +396,13 @@
             });
             ctx.restore();
             
-            // Blink state machine
-            if (blinkDetected && !isBlinking) {
-                // Blink started
-                isBlinking = true;
-                blinkStartTime = now;
+            // Left wink = dot
+            if (leftWinkDetected && !leftWinking) {
+                leftWinking = true;
+                winkStartTime = now;
                 blinkIndicator.classList.add('blink');
                 
-                // Check if we should commit letter or add space
+                // Check gaps before new input
                 const openDuration = now - eyesOpenTime;
                 if (currentMorse.length > 0 && openDuration > WORD_GAP) {
                     commitLetter();
@@ -394,31 +411,43 @@
                 } else if (currentMorse.length > 0 && openDuration > LETTER_GAP) {
                     commitLetter();
                 }
-                
-            } else if (!blinkDetected && isBlinking) {
-                // Blink ended
-                isBlinking = false;
+            } else if (!leftWinkDetected && leftWinking) {
+                leftWinking = false;
                 blinkIndicator.classList.remove('blink');
                 eyesOpenTime = now;
+                currentMorse += '.';
+                earEl.textContent = '· (L)';
+                playTone(100);
+                updateDisplay();
+            }
+            
+            // Right wink = dash
+            if (rightWinkDetected && !rightWinking) {
+                rightWinking = true;
+                winkStartTime = now;
+                blinkIndicator.classList.add('blink');
                 
-                const blinkDuration = now - blinkStartTime;
-                
-                if (blinkDuration > 50) { // Ignore very short glitches
-                    if (blinkDuration < DOT_THRESHOLD) {
-                        currentMorse += '.';
-                        earEl.textContent = '·';
-                        playTone(100);
-                    } else {
-                        currentMorse += '-';
-                        earEl.textContent = '−';
-                        playTone(300);
-                    }
-                    updateDisplay();
-                }
-            } else if (!blinkDetected && !isBlinking) {
-                // Eyes open - check for letter/word gap
                 const openDuration = now - eyesOpenTime;
-                
+                if (currentMorse.length > 0 && openDuration > WORD_GAP) {
+                    commitLetter();
+                    output += ' ';
+                    outputEl.textContent = output;
+                } else if (currentMorse.length > 0 && openDuration > LETTER_GAP) {
+                    commitLetter();
+                }
+            } else if (!rightWinkDetected && rightWinking) {
+                rightWinking = false;
+                blinkIndicator.classList.remove('blink');
+                eyesOpenTime = now;
+                currentMorse += '-';
+                earEl.textContent = '− (R)';
+                playTone(300);
+                updateDisplay();
+            }
+            
+            // Check for letter/word gap when both eyes open
+            if (!leftWinking && !rightWinking) {
+                const openDuration = now - eyesOpenTime;
                 if (currentMorse.length > 0) {
                     if (openDuration > WORD_GAP) {
                         commitLetter();
@@ -431,8 +460,8 @@
                 }
             }
             
-            statusEl.textContent = `EAR: ${ear.toFixed(3)} / ${(earBaseline || 0).toFixed(3)} | ${isBlinking ? 'BLINK' : 'open'}`;
-            lastEAR = lastEAR * 0.9 + ear * 0.1;
+            statusEl.textContent = `L: ${ear.left.toFixed(3)}/${leftBaseline.toFixed(3)} R: ${ear.right.toFixed(3)}/${rightBaseline.toFixed(3)}`;
+            lastEAR = ear.avg;
         }
         
         function updateDisplay() {
@@ -464,8 +493,10 @@
             currentCharEl.textContent = '?';
             earEl.textContent = '';
             // Reset calibration
-            earBaseline = null;
-            earSamples = [];
+            leftBaseline = null;
+            rightBaseline = null;
+            leftSamples = [];
+            rightSamples = [];
         });
         
         soundBtn.addEventListener('click', () => {
