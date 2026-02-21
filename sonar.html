@@ -174,7 +174,7 @@
     
     <div class="params">
         <div class="param">
-            <label>Frequency <span id="freqVal">4000</span>Hz</label>
+            <label>Center Freq <span id="freqVal">4000</span>Hz</label>
             <input type="range" id="freq" min="1000" max="12000" step="100" value="4000">
         </div>
         <div class="param">
@@ -253,21 +253,31 @@
         }
         
         function emitChirp() {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
+            // Linear frequency sweep (chirp) - much better for sonar
+            const duration = chirpDuration / 1000;
+            const sampleRate = audioCtx.sampleRate;
+            const numSamples = Math.floor(duration * sampleRate);
+            const buffer = audioCtx.createBuffer(1, numSamples, sampleRate);
+            const data = buffer.getChannelData(0);
             
-            osc.type = 'sine';
-            osc.frequency.value = freq;
+            const freqStart = freq * 0.5;  // Sweep from half
+            const freqEnd = freq * 1.5;    // To 1.5x the center freq
             
-            const now = audioCtx.currentTime;
-            gain.gain.setValueAtTime(0.5, now);
-            gain.gain.linearRampToValueAtTime(0, now + chirpDuration / 1000);
+            for (let i = 0; i < numSamples; i++) {
+                const t = i / sampleRate;
+                // Linear chirp: frequency increases linearly with time
+                const instantFreq = freqStart + (freqEnd - freqStart) * (t / duration);
+                const phase = 2 * Math.PI * (freqStart * t + (freqEnd - freqStart) * t * t / (2 * duration));
+                
+                // Apply Hann window to reduce spectral splatter
+                const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / numSamples));
+                data[i] = Math.sin(phase) * window * 0.7;
+            }
             
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            
-            osc.start(now);
-            osc.stop(now + chirpDuration / 1000);
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+            source.start();
         }
         
         function getEnvelope() {
@@ -345,18 +355,28 @@
             ctx.strokeStyle = '#222';
             ctx.lineWidth = 1;
             
-            // Distance markers
+            // Distance markers - smart spacing
             const maxDist = (listenTime / 1000) * SPEED_OF_SOUND / 2;
-            for (let d = 0; d <= maxDist; d += 1) {
+            const distStep = maxDist > 5 ? 1 : maxDist > 2 ? 0.5 : 0.25;
+            
+            ctx.fillStyle = '#444';
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'center';
+            
+            for (let d = 0; d <= maxDist; d += distStep) {
                 const x = (d / maxDist) * w;
+                
+                ctx.strokeStyle = d % 1 === 0 ? '#333' : '#1a1a1a';
+                ctx.lineWidth = d % 1 === 0 ? 1 : 0.5;
                 ctx.beginPath();
                 ctx.moveTo(x, 0);
                 ctx.lineTo(x, h);
                 ctx.stroke();
                 
-                ctx.fillStyle = '#444';
-                ctx.font = '10px sans-serif';
-                ctx.fillText(d + 'm', x + 3, h - 5);
+                // Only label whole meters or key fractions
+                if (d % (distStep * 2) === 0 || d === 0) {
+                    ctx.fillText(d.toFixed(d % 1 === 0 ? 0 : 1) + 'm', x, 15);
+                }
             }
             
             // Draw threshold line
