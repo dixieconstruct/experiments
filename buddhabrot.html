@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Buddhabrot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #000;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+        
+        .back-link {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            color: #666;
+            text-decoration: none;
+            font-size: 1.2em;
+            z-index: 100;
+        }
+        
+        canvas {
+            display: block;
+            cursor: crosshair;
+        }
+        
+        .controls {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            background: rgba(20, 20, 20, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 100;
+            min-width: 200px;
+        }
+        
+        .controls h2 {
+            font-size: 0.7em;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #ff6b35;
+            margin-bottom: 12px;
+        }
+        
+        .param {
+            margin-bottom: 10px;
+        }
+        
+        .param label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75em;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        
+        .param label span {
+            color: #ff6b35;
+            font-family: monospace;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            -webkit-appearance: none;
+            background: #333;
+            border-radius: 2px;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #ff6b35;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        button {
+            width: 100%;
+            padding: 8px;
+            background: #ff6b35;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8em;
+            margin-top: 5px;
+        }
+        
+        button:hover {
+            background: #e55a2b;
+        }
+        
+        .info {
+            position: fixed;
+            bottom: 15px;
+            left: 15px;
+            color: #444;
+            font-size: 0.75em;
+            z-index: 100;
+        }
+        
+        .progress {
+            position: fixed;
+            bottom: 15px;
+            right: 15px;
+            color: #666;
+            font-size: 0.75em;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">←</a>
+    <canvas id="canvas"></canvas>
+    
+    <div class="controls">
+        <h2>Buddhabrot</h2>
+        <div class="param">
+            <label>Max Iterations <span id="maxIterVal">1000</span></label>
+            <input type="range" id="maxIter" min="100" max="10000" step="100" value="1000">
+        </div>
+        <div class="param">
+            <label>Min Iterations <span id="minIterVal">20</span></label>
+            <input type="range" id="minIter" min="1" max="500" step="1" value="20">
+        </div>
+        <div class="param">
+            <label>Samples/Frame <span id="samplesVal">5000</span></label>
+            <input type="range" id="samples" min="1000" max="50000" step="1000" value="5000">
+        </div>
+        <div class="param">
+            <label>Exposure <span id="exposureVal">1.0</span></label>
+            <input type="range" id="exposure" min="0.1" max="5" step="0.1" value="1">
+        </div>
+        <button id="reset">Reset View</button>
+        <button id="clear">Clear & Restart</button>
+    </div>
+    
+    <div class="info">Tap to zoom in • Shift+tap to zoom out</div>
+    <div class="progress">Samples: <span id="totalSamples">0</span></div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Viewport
+        let centerX = -0.5;
+        let centerY = 0;
+        let zoom = 1;
+        let width, height;
+        
+        // Accumulator buffer (RGB channels for anti-buddhabrot effect)
+        let accumR, accumG, accumB;
+        let totalSamples = 0;
+        
+        // Settings
+        let maxIter = 1000;
+        let minIter = 20;
+        let samplesPerFrame = 5000;
+        let exposure = 1.0;
+        
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            clearAccum();
+        }
+        
+        function clearAccum() {
+            accumR = new Float32Array(width * height);
+            accumG = new Float32Array(width * height);
+            accumB = new Float32Array(width * height);
+            totalSamples = 0;
+        }
+        
+        resize();
+        window.addEventListener('resize', resize);
+        
+        // Map pixel to complex plane
+        function pixelToComplex(px, py) {
+            const aspect = width / height;
+            const viewWidth = 3.5 / zoom;
+            const viewHeight = viewWidth / aspect;
+            return {
+                x: centerX + (px / width - 0.5) * viewWidth,
+                y: centerY + (py / height - 0.5) * viewHeight
+            };
+        }
+        
+        // Map complex to pixel
+        function complexToPixel(cx, cy) {
+            const aspect = width / height;
+            const viewWidth = 3.5 / zoom;
+            const viewHeight = viewWidth / aspect;
+            return {
+                x: Math.floor((cx - centerX) / viewWidth * width + width / 2),
+                y: Math.floor((cy - centerY) / viewHeight * height + height / 2)
+            };
+        }
+        
+        // Generate random point in Mandelbrot sampling region
+        function randomPoint() {
+            return {
+                x: Math.random() * 4 - 2.5,
+                y: Math.random() * 4 - 2
+            };
+        }
+        
+        // Trace orbit and accumulate if escapes
+        function traceOrbit(c, channel) {
+            const trajectory = [];
+            let x = 0, y = 0;
+            let iter = 0;
+            
+            // First pass: check if escapes and collect trajectory
+            while (x*x + y*y <= 4 && iter < maxIter) {
+                trajectory.push({ x, y });
+                const xNew = x*x - y*y + c.x;
+                y = 2*x*y + c.y;
+                x = xNew;
+                iter++;
+            }
+            
+            // Only accumulate if point escapes (not in Mandelbrot set)
+            // and has enough iterations for detail
+            if (iter < maxIter && iter > minIter) {
+                const accum = channel === 0 ? accumR : channel === 1 ? accumG : accumB;
+                
+                for (const p of trajectory) {
+                    const pixel = complexToPixel(p.x, p.y);
+                    if (pixel.x >= 0 && pixel.x < width && pixel.y >= 0 && pixel.y < height) {
+                        accum[pixel.y * width + pixel.x]++;
+                    }
+                }
+            }
+        }
+        
+        // Render accumulated buffer
+        function render() {
+            const imageData = ctx.createImageData(width, height);
+            const data = imageData.data;
+            
+            // Find max for normalization
+            let maxVal = 1;
+            for (let i = 0; i < width * height; i++) {
+                maxVal = Math.max(maxVal, accumR[i], accumG[i], accumB[i]);
+            }
+            
+            const scale = 255 * exposure / Math.pow(maxVal, 0.4);
+            
+            for (let i = 0; i < width * height; i++) {
+                const idx = i * 4;
+                // Apply gamma and exposure
+                data[idx] = Math.min(255, Math.pow(accumR[i], 0.4) * scale);
+                data[idx + 1] = Math.min(255, Math.pow(accumG[i], 0.4) * scale);
+                data[idx + 2] = Math.min(255, Math.pow(accumB[i], 0.4) * scale);
+                data[idx + 3] = 255;
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+        }
+        
+        // Main loop
+        function frame() {
+            // Sample with different iteration ranges for RGB channels
+            // This creates the classic colorful Buddhabrot
+            for (let i = 0; i < samplesPerFrame / 3; i++) {
+                traceOrbit(randomPoint(), 0); // Red: fewer iterations
+            }
+            for (let i = 0; i < samplesPerFrame / 3; i++) {
+                traceOrbit(randomPoint(), 1); // Green: medium
+            }
+            for (let i = 0; i < samplesPerFrame / 3; i++) {
+                traceOrbit(randomPoint(), 2); // Blue: more iterations
+            }
+            
+            totalSamples += samplesPerFrame;
+            document.getElementById('totalSamples').textContent = 
+                totalSamples >= 1e6 ? (totalSamples / 1e6).toFixed(1) + 'M' : 
+                totalSamples >= 1e3 ? (totalSamples / 1e3).toFixed(0) + 'K' : 
+                totalSamples;
+            
+            render();
+            requestAnimationFrame(frame);
+        }
+        
+        // Click to zoom
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+            
+            const c = pixelToComplex(px, py);
+            centerX = c.x;
+            centerY = c.y;
+            
+            if (e.shiftKey) {
+                zoom /= 2;
+            } else {
+                zoom *= 2;
+            }
+            
+            clearAccum();
+        });
+        
+        // Touch to zoom
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const px = touch.clientX - rect.left;
+            const py = touch.clientY - rect.top;
+            
+            const c = pixelToComplex(px, py);
+            centerX = c.x;
+            centerY = c.y;
+            zoom *= 2;
+            
+            clearAccum();
+        });
+        
+        // Controls
+        document.getElementById('maxIter').addEventListener('input', (e) => {
+            maxIter = parseInt(e.target.value);
+            document.getElementById('maxIterVal').textContent = maxIter;
+        });
+        
+        document.getElementById('minIter').addEventListener('input', (e) => {
+            minIter = parseInt(e.target.value);
+            document.getElementById('minIterVal').textContent = minIter;
+        });
+        
+        document.getElementById('samples').addEventListener('input', (e) => {
+            samplesPerFrame = parseInt(e.target.value);
+            document.getElementById('samplesVal').textContent = samplesPerFrame;
+        });
+        
+        document.getElementById('exposure').addEventListener('input', (e) => {
+            exposure = parseFloat(e.target.value);
+            document.getElementById('exposureVal').textContent = exposure.toFixed(1);
+        });
+        
+        document.getElementById('reset').addEventListener('click', () => {
+            centerX = -0.5;
+            centerY = 0;
+            zoom = 1;
+            clearAccum();
+        });
+        
+        document.getElementById('clear').addEventListener('click', clearAccum);
+        
+        // Start
+        frame();
+    </script>
+</body>
+</html>
