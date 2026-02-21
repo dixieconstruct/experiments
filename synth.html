@@ -267,6 +267,18 @@
         </div>
         
         <div class="module">
+            <h2>Bitcrusher</h2>
+            <div class="param">
+                <label>Bit Depth <span id="bitDepthVal">16</span></label>
+                <input type="range" id="bitDepth" min="1" max="16" value="16">
+            </div>
+            <div class="param">
+                <label>Sample Rate <span id="crushRateVal">44100</span>Hz</label>
+                <input type="range" id="crushRate" min="500" max="44100" value="44100">
+            </div>
+        </div>
+        
+        <div class="module">
             <h2>Master</h2>
             <div class="param">
                 <label>Volume <span id="volumeVal">50</span>%</label>
@@ -286,6 +298,11 @@
         let lfoGain = null;
         let distortion = null;
         let filter = null;
+        let bitcrusher = null;
+        
+        // Bitcrusher using ScriptProcessor (wider support than AudioWorklet)
+        let crushBits = 16;
+        let crushRate = 44100;
         
         const activeVoices = {};
         
@@ -334,9 +351,32 @@
             lfo.connect(lfoGain);
             lfo.start();
             
-            // Connect chain: filter -> distortion -> master -> output
+            // Bitcrusher using ScriptProcessor
+            bitcrusher = audioCtx.createScriptProcessor(4096, 1, 1);
+            let phaser = 0;
+            let lastSample = 0;
+            
+            bitcrusher.onaudioprocess = (e) => {
+                const input = e.inputBuffer.getChannelData(0);
+                const output = e.outputBuffer.getChannelData(0);
+                const step = Math.pow(0.5, crushBits);
+                const rateFactor = crushRate / audioCtx.sampleRate;
+                
+                for (let i = 0; i < input.length; i++) {
+                    phaser += rateFactor;
+                    if (phaser >= 1) {
+                        phaser -= 1;
+                        // Quantize to bit depth
+                        lastSample = step * Math.floor(input[i] / step + 0.5);
+                    }
+                    output[i] = lastSample;
+                }
+            };
+            
+            // Connect chain: filter -> distortion -> bitcrusher -> master -> output
             filter.connect(distortion);
-            distortion.connect(masterGain);
+            distortion.connect(bitcrusher);
+            bitcrusher.connect(masterGain);
             masterGain.connect(audioCtx.destination);
         }
         
@@ -484,6 +524,8 @@
         bindParam('cutoff', (v) => { if (filter) filter.frequency.value = v; }, 'cutoffVal');
         bindParam('q', (v) => { if (filter) filter.Q.value = v; }, 'qVal');
         bindParam('drive', (v) => { if (distortion) distortion.curve = makeDistortionCurve(v * 4); }, 'driveVal');
+        bindParam('bitDepth', (v) => { crushBits = parseInt(v); }, 'bitDepthVal');
+        bindParam('crushRate', (v) => { crushRate = parseInt(v); }, 'crushRateVal');
         bindParam('volume', (v) => { if (masterGain) masterGain.gain.value = v / 100; }, 'volumeVal');
         
         document.getElementById('filterType').addEventListener('change', (e) => {
