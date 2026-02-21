@@ -71,7 +71,7 @@
             if (audioCtx) return;
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             masterGain = audioCtx.createGain();
-            masterGain.gain.value = 0.6;
+            masterGain.gain.value = 0.85;
             masterGain.connect(audioCtx.destination);
         }
         
@@ -90,9 +90,14 @@
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             
-            // Single pure sine wave
+            // Single pure sine wave + fifth below
             osc.type = 'sine';
             osc.frequency.value = freq;
+            
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.value = freq / 1.5; // Perfect fifth down
             
             // Gentle envelope with long release
             const now = audioCtx.currentTime;
@@ -102,11 +107,19 @@
             gain.gain.linearRampToValueAtTime(volume, now + 0.02);
             gain.gain.exponentialRampToValueAtTime(0.001, now + 2.5);
             
+            gain2.gain.setValueAtTime(0, now);
+            gain2.gain.linearRampToValueAtTime(volume * 0.6, now + 0.03);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + 3.0);
+            
             osc.connect(gain);
+            osc2.connect(gain2);
             gain.connect(masterGain);
+            gain2.connect(masterGain);
             
             osc.start(now);
+            osc2.start(now);
             osc.stop(now + 2.6);
+            osc2.stop(now + 3.2);
         }
         
         // Track active sound spots to avoid too many simultaneous sounds
