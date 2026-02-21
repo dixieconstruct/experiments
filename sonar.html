@@ -189,6 +189,10 @@
             <label>Threshold <span id="threshVal">0.15</span></label>
             <input type="range" id="thresh" min="0.05" max="0.5" step="0.01" value="0.15">
         </div>
+        <div class="param">
+            <label>Blanking <span id="blankVal">30</span>ms</label>
+            <input type="range" id="blank" min="0" max="100" step="5" value="30">
+        </div>
     </div>
     
     <p class="info">Point your phone at a surface. The display shows echo intensity over time (distance). Works best in quiet environments with hard surfaces.</p>
@@ -208,6 +212,7 @@
         let chirpDuration = 20;
         let listenTime = 200;
         let threshold = 0.15;
+        let blankTime = 30;
         
         // State
         let isListening = false;
@@ -320,10 +325,10 @@
                 await new Promise(r => setTimeout(r, 5));
             }
             
-            // Find first significant echo
+            // Find first significant echo (after blanking period)
             let firstEcho = null;
             for (const echo of echoData) {
-                if (echo.amplitude > threshold && echo.time > 10) {
+                if (echo.amplitude > threshold && echo.time > blankTime) {
                     firstEcho = echo;
                     break;
                 }
@@ -357,26 +362,28 @@
             
             // Distance markers - smart spacing
             const maxDist = (listenTime / 1000) * SPEED_OF_SOUND / 2;
-            const distStep = maxDist > 5 ? 1 : maxDist > 2 ? 0.5 : 0.25;
+            let distStep;
+            if (maxDist > 20) distStep = 5;
+            else if (maxDist > 10) distStep = 2;
+            else if (maxDist > 5) distStep = 1;
+            else if (maxDist > 2) distStep = 0.5;
+            else distStep = 0.25;
             
-            ctx.fillStyle = '#444';
-            ctx.font = '12px monospace';
+            ctx.fillStyle = '#666';
+            ctx.font = '11px monospace';
             ctx.textAlign = 'center';
             
-            for (let d = 0; d <= maxDist; d += distStep) {
+            for (let d = distStep; d <= maxDist; d += distStep) {
                 const x = (d / maxDist) * w;
                 
-                ctx.strokeStyle = d % 1 === 0 ? '#333' : '#1a1a1a';
-                ctx.lineWidth = d % 1 === 0 ? 1 : 0.5;
+                ctx.strokeStyle = '#222';
+                ctx.lineWidth = 1;
                 ctx.beginPath();
-                ctx.moveTo(x, 0);
+                ctx.moveTo(x, 20);
                 ctx.lineTo(x, h);
                 ctx.stroke();
                 
-                // Only label whole meters or key fractions
-                if (d % (distStep * 2) === 0 || d === 0) {
-                    ctx.fillText(d.toFixed(d % 1 === 0 ? 0 : 1) + 'm', x, 15);
-                }
+                ctx.fillText(d % 1 === 0 ? d + 'm' : d.toFixed(1) + 'm', x, 14);
             }
             
             // Draw threshold line
@@ -386,6 +393,12 @@
             ctx.moveTo(0, threshY);
             ctx.lineTo(w, threshY);
             ctx.stroke();
+            
+            // Draw blanking zone
+            const blankDist = (blankTime / 1000) * SPEED_OF_SOUND / 2;
+            const blankX = (blankDist / maxDist) * w;
+            ctx.fillStyle = 'rgba(255, 100, 100, 0.1)';
+            ctx.fillRect(0, 20, blankX, h - 20);
             
             // Draw echo envelope
             ctx.strokeStyle = '#00ff88';
@@ -448,6 +461,11 @@
         document.getElementById('thresh').addEventListener('input', (e) => {
             threshold = parseFloat(e.target.value);
             document.getElementById('threshVal').textContent = threshold.toFixed(2);
+        });
+        
+        document.getElementById('blank').addEventListener('input', (e) => {
+            blankTime = parseInt(e.target.value);
+            document.getElementById('blankVal').textContent = blankTime;
         });
         
         // Initial draw
