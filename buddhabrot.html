@@ -40,13 +40,46 @@
             border-radius: 10px;
             z-index: 100;
             min-width: 200px;
+            transition: transform 0.3s ease;
+        }
+        
+        .controls.hidden {
+            transform: translateX(calc(100% + 30px));
+        }
+        
+        .controls-toggle {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            background: rgba(20, 20, 20, 0.9);
+            color: #4a9eff;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            font-size: 1.2em;
+            cursor: pointer;
+            z-index: 99;
+            display: none;
+        }
+        
+        @media (max-width: 600px) {
+            .controls-toggle {
+                display: block;
+            }
+            .controls {
+                top: 60px;
+            }
+            .controls.hidden + .controls-toggle {
+                right: 15px;
+            }
         }
         
         .controls h2 {
             font-size: 0.7em;
             text-transform: uppercase;
             letter-spacing: 0.1em;
-            color: #ff6b35;
+            color: #4a9eff;
             margin-bottom: 12px;
         }
         
@@ -63,7 +96,7 @@
         }
         
         .param label span {
-            color: #ff6b35;
+            color: #4a9eff;
             font-family: monospace;
         }
         
@@ -79,7 +112,7 @@
             -webkit-appearance: none;
             width: 14px;
             height: 14px;
-            background: #ff6b35;
+            background: #4a9eff;
             border-radius: 50%;
             cursor: pointer;
         }
@@ -87,7 +120,7 @@
         button {
             width: 100%;
             padding: 8px;
-            background: #ff6b35;
+            background: #4a9eff;
             color: #fff;
             border: none;
             border-radius: 6px;
@@ -97,7 +130,7 @@
         }
         
         button:hover {
-            background: #e55a2b;
+            background: #3a8eef;
         }
         
         .info {
@@ -122,8 +155,9 @@
 <body>
     <a href="index.html" class="back-link">←</a>
     <canvas id="canvas"></canvas>
+    <button class="controls-toggle" id="toggle">⚙</button>
     
-    <div class="controls">
+    <div class="controls" id="controls">
         <h2>Buddhabrot</h2>
         <div class="param">
             <label>Max Iterations <span id="maxIterVal">1000</span></label>
@@ -245,25 +279,29 @@
             }
         }
         
-        // Render accumulated buffer
+        // Render accumulated buffer - blue monochrome
         function render() {
             const imageData = ctx.createImageData(width, height);
             const data = imageData.data;
             
-            // Find max for normalization
+            // Combine all channels into one
             let maxVal = 1;
             for (let i = 0; i < width * height; i++) {
-                maxVal = Math.max(maxVal, accumR[i], accumG[i], accumB[i]);
+                const combined = accumR[i] + accumG[i] + accumB[i];
+                maxVal = Math.max(maxVal, combined);
             }
             
-            const scale = 255 * exposure / Math.pow(maxVal, 0.4);
+            const scale = exposure / Math.pow(maxVal, 0.4);
             
             for (let i = 0; i < width * height; i++) {
                 const idx = i * 4;
-                // Apply gamma and exposure
-                data[idx] = Math.min(255, Math.pow(accumR[i], 0.4) * scale);
-                data[idx + 1] = Math.min(255, Math.pow(accumG[i], 0.4) * scale);
-                data[idx + 2] = Math.min(255, Math.pow(accumB[i], 0.4) * scale);
+                const combined = accumR[i] + accumG[i] + accumB[i];
+                const val = Math.pow(combined, 0.4) * scale;
+                
+                // Blue monochrome palette
+                data[idx] = Math.min(255, val * 40);      // R - hint
+                data[idx + 1] = Math.min(255, val * 120); // G - medium
+                data[idx + 2] = Math.min(255, val * 255); // B - full
                 data[idx + 3] = 255;
             }
             
@@ -358,6 +396,11 @@
         });
         
         document.getElementById('clear').addEventListener('click', clearAccum);
+        
+        // Toggle controls on mobile
+        document.getElementById('toggle').addEventListener('click', () => {
+            document.getElementById('controls').classList.toggle('hidden');
+        });
         
         // Start
         frame();
