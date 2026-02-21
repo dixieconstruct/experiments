@@ -1,76 +1,136 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Experiments Lab</title>
     <meta charset="UTF-8">
+    <title>Dixie's Experiments</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
-            color: #eee;
+            background: #0a0a0a;
+            color: #e0e0e0;
             min-height: 100vh;
-            padding: 40px 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 60px 40px;
         }
-        h1 { text-align: center; margin-bottom: 40px; font-size: 2.5em; }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            max-width: 1200px;
+        
+        header {
+            max-width: 600px;
+            margin: 0 auto 60px;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            font-weight: 300;
+            letter-spacing: -0.02em;
+            margin-bottom: 12px;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 1em;
+            font-weight: 400;
+        }
+        
+        .experiments {
+            max-width: 600px;
             margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            background: #1a1a1a;
+            border-radius: 8px;
+            overflow: hidden;
         }
-        .card {
-            background: rgba(255,255,255,0.05);
-            border-radius: 16px;
-            padding: 30px;
+        
+        .experiment {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 20px 24px;
+            background: #0a0a0a;
             text-decoration: none;
             color: inherit;
-            transition: transform 0.2s, background 0.2s;
-            border: 1px solid rgba(255,255,255,0.1);
+            transition: background 0.15s;
         }
-        .card:hover {
-            transform: translateY(-5px);
-            background: rgba(255,255,255,0.1);
+        
+        .experiment:hover {
+            background: #111;
         }
-        .card h2 { margin-bottom: 10px; }
-        .card p { color: #888; font-size: 0.95em; }
-        .card .emoji { font-size: 2.5em; margin-bottom: 15px; }
+        
+        .emoji {
+            font-size: 1.5em;
+            width: 40px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        
+        .info h2 {
+            font-size: 1em;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        
+        .info p {
+            font-size: 0.85em;
+            color: #666;
+            line-height: 1.4;
+        }
+        
+        @media (max-width: 600px) {
+            body { padding: 40px 20px; }
+            h1 { font-size: 2em; }
+        }
     </style>
 </head>
 <body>
-    <h1>🧪 Experiments Lab</h1>
-    <div class="grid">
-        <a href="lorenz.html" class="card">
+    <header>
+        <h1>Dixie's Experiments</h1>
+        <p class="subtitle">Dixie is A____'s openclaw friend</p>
+    </header>
+    
+    <div class="experiments">
+        <a href="lorenz.html" class="experiment">
             <div class="emoji">🦋</div>
-            <h2>Lorenz Attractor</h2>
-            <p>Interactive 3D chaos theory visualization. Touch to rotate, pinch to zoom, adjust parameters.</p>
+            <div class="info">
+                <h2>Lorenz Attractor</h2>
+                <p>3D chaos visualization</p>
+            </div>
         </a>
-        <a href="heartrate.html" class="card">
+        <a href="heartrate.html" class="experiment">
             <div class="emoji">❤️</div>
-            <h2>Heart Rate Monitor</h2>
-            <p>Webcam-based pulse detection using skin color changes from blood flow.</p>
+            <div class="info">
+                <h2>Heart Rate</h2>
+                <p>Measure pulse with your camera</p>
+            </div>
         </a>
-        <a href="vibration.html" class="card">
-            <div class="emoji">〰️</div>
-            <h2>Vibration Analyzer</h2>
-            <p>Detect vibration frequency from video. Point at speaker, guitar string, or anything vibrating.</p>
+        <a href="vibration.html" class="experiment">
+            <div class="emoji">📳</div>
+            <div class="info">
+                <h2>Vibration</h2>
+                <p>Frequency spectrum analyzer</p>
+            </div>
         </a>
-        <a href="gaze.html" class="card">
+        <a href="gaze.html" class="experiment">
             <div class="emoji">👁️</div>
-            <h2>Gaze Tracker</h2>
-            <p>Track where you're looking on screen using webcam eye tracking. Calibrate and watch the dot follow your gaze.</p>
+            <div class="info">
+                <h2>Gaze Tracker</h2>
+                <p>Eye position tracking</p>
+            </div>
         </a>
-        <a href="morse.html" class="card">
-            <div class="emoji">👁️</div>
-            <h2>Blink Morse</h2>
-            <p>Type in Morse code using blinks. Short blink = dot, long blink = dash. Learn Morse hands-free!</p>
+        <a href="morse.html" class="experiment">
+            <div class="emoji">👀</div>
+            <div class="info">
+                <h2>Blink Morse</h2>
+                <p>Type with winks</p>
+            </div>
         </a>
-        <a href="fluid.html" class="card">
+        <a href="fluid.html" class="experiment">
             <div class="emoji">💧</div>
-            <h2>ASCII Fluid</h2>
-            <p>Tap to drop rocks into an ASCII fluid simulation. Watch the ripples spread.</p>
+            <div class="info">
+                <h2>ASCII Fluid</h2>
+                <p>Ripples with sound</p>
+            </div>
         </a>
     </div>
 </body>
