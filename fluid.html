@@ -117,9 +117,11 @@
         
         // Drop a rock - creates a depression that bounces back
         function dropRock(x, y, radius, strength) {
+            const aspectRatio = 1.8; // chars are taller than wide
             for (let dy = -radius; dy <= radius; dy++) {
-                for (let dx = -radius; dx <= radius; dx++) {
-                    const dist = Math.sqrt(dx*dx + dy*dy);
+                for (let dx = -radius * aspectRatio; dx <= radius * aspectRatio; dx++) {
+                    // Adjust distance calc for aspect ratio
+                    const dist = Math.sqrt((dx/aspectRatio)*(dx/aspectRatio) + dy*dy);
                     if (dist <= radius) {
                         const px = Math.floor(x + dx);
                         const py = Math.floor(y + dy);
@@ -137,6 +139,8 @@
         function simulate() {
             const damping = 0.99;
             const speed = 0.4;
+            // Characters are ~1.4x taller than wide, compensate
+            const aspectRatio = 1.8; // horizontal stretch factor
             
             const newHeight = new Float32Array(COLS * ROWS);
             const newVelocity = new Float32Array(COLS * ROWS);
@@ -145,11 +149,12 @@
                 for (let x = 1; x < COLS - 1; x++) {
                     const i = idx(x, y);
                     
-                    // Laplacian (average of neighbors minus center)
+                    // Laplacian with aspect ratio correction
+                    // Weight horizontal neighbors more to stretch horizontally
                     const laplacian = (
-                        height[idx(x-1, y)] + height[idx(x+1, y)] +
+                        (height[idx(x-1, y)] + height[idx(x+1, y)]) * aspectRatio +
                         height[idx(x, y-1)] + height[idx(x, y+1)]
-                    ) / 4 - height[i];
+                    ) / (2 + 2 * aspectRatio) - height[i];
                     
                     // Wave equation: acceleration proportional to curvature
                     newVelocity[i] = (velocity[i] + laplacian * speed) * damping;
