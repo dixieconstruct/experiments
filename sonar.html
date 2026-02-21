@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Sonar</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0a;
+            color: #e0e0e0;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .back-link {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            color: #666;
+            text-decoration: none;
+            font-size: 1.2em;
+            z-index: 100;
+        }
+        
+        h1 {
+            font-size: 1.5em;
+            font-weight: 300;
+            color: #00ff88;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 0.85em;
+            margin-bottom: 20px;
+        }
+        
+        .sonar-display {
+            width: 100%;
+            max-width: 600px;
+            aspect-ratio: 2/1;
+            background: #111;
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 20px;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        button {
+            padding: 12px 24px;
+            background: #00ff88;
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        
+        button:hover {
+            background: #00cc6a;
+        }
+        
+        button:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+        
+        button.active {
+            background: #ff4444;
+        }
+        
+        .params {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            max-width: 600px;
+            width: 100%;
+            background: #151515;
+            padding: 15px;
+            border-radius: 12px;
+        }
+        
+        .param label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75em;
+            color: #888;
+            margin-bottom: 5px;
+        }
+        
+        .param label span {
+            color: #00ff88;
+            font-family: monospace;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            -webkit-appearance: none;
+            background: #333;
+            border-radius: 2px;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #00ff88;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        .distance {
+            font-size: 3em;
+            font-weight: 200;
+            color: #00ff88;
+            margin: 20px 0;
+            font-family: monospace;
+        }
+        
+        .distance small {
+            font-size: 0.4em;
+            color: #666;
+        }
+        
+        .info {
+            color: #444;
+            font-size: 0.75em;
+            text-align: center;
+            max-width: 400px;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">←</a>
+    <h1>Sonar</h1>
+    <p class="subtitle">Pulse-echo distance sensing</p>
+    
+    <div class="sonar-display">
+        <canvas id="canvas"></canvas>
+    </div>
+    
+    <div class="distance">
+        <span id="distance">--</span><small>m</small>
+    </div>
+    
+    <div class="controls">
+        <button id="ping">PING</button>
+        <button id="continuous">Continuous</button>
+    </div>
+    
+    <div class="params">
+        <div class="param">
+            <label>Frequency <span id="freqVal">4000</span>Hz</label>
+            <input type="range" id="freq" min="1000" max="12000" step="100" value="4000">
+        </div>
+        <div class="param">
+            <label>Chirp Duration <span id="durationVal">20</span>ms</label>
+            <input type="range" id="duration" min="5" max="100" step="5" value="20">
+        </div>
+        <div class="param">
+            <label>Listen Time <span id="listenVal">200</span>ms</label>
+            <input type="range" id="listen" min="50" max="500" step="10" value="200">
+        </div>
+        <div class="param">
+            <label>Threshold <span id="threshVal">0.15</span></label>
+            <input type="range" id="thresh" min="0.05" max="0.5" step="0.01" value="0.15">
+        </div>
+    </div>
+    
+    <p class="info">Point your phone at a surface. The display shows echo intensity over time (distance). Works best in quiet environments with hard surfaces.</p>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const distanceEl = document.getElementById('distance');
+        
+        // Audio
+        let audioCtx = null;
+        let analyser = null;
+        let micStream = null;
+        
+        // Settings
+        let freq = 4000;
+        let chirpDuration = 20;
+        let listenTime = 200;
+        let threshold = 0.15;
+        
+        // State
+        let isListening = false;
+        let continuous = false;
+        let echoData = [];
+        const SPEED_OF_SOUND = 343; // m/s at 20°C
+        
+        function resize() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+        resize();
+        window.addEventListener('resize', resize);
+        
+        async function initAudio() {
+            if (audioCtx) return true;
+            
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Get microphone
+                micStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { 
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    } 
+                });
+                
+                const source = audioCtx.createMediaStreamSource(micStream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 2048;
+                analyser.smoothingTimeConstant = 0;
+                source.connect(analyser);
+                
+                return true;
+            } catch (e) {
+                alert('Microphone access required: ' + e.message);
+                return false;
+            }
+        }
+        
+        function emitChirp() {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            
+            const now = audioCtx.currentTime;
+            gain.gain.setValueAtTime(0.5, now);
+            gain.gain.linearRampToValueAtTime(0, now + chirpDuration / 1000);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.start(now);
+            osc.stop(now + chirpDuration / 1000);
+        }
+        
+        function getEnvelope() {
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+            
+            // Calculate RMS amplitude
+            let sum = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                const v = (dataArray[i] - 128) / 128;
+                sum += v * v;
+            }
+            return Math.sqrt(sum / bufferLength);
+        }
+        
+        async function ping() {
+            if (isListening) return;
+            if (!await initAudio()) return;
+            
+            isListening = true;
+            echoData = [];
+            
+            const startTime = performance.now();
+            
+            // Emit chirp
+            emitChirp();
+            
+            // Wait for chirp to finish
+            await new Promise(r => setTimeout(r, chirpDuration + 5));
+            
+            // Record echoes
+            const samples = Math.floor(listenTime / 5);
+            for (let i = 0; i < samples; i++) {
+                const elapsed = performance.now() - startTime - chirpDuration;
+                const amplitude = getEnvelope();
+                const distance = (elapsed / 1000) * SPEED_OF_SOUND / 2;
+                
+                echoData.push({ time: elapsed, amplitude, distance });
+                await new Promise(r => setTimeout(r, 5));
+            }
+            
+            // Find first significant echo
+            let firstEcho = null;
+            for (const echo of echoData) {
+                if (echo.amplitude > threshold && echo.time > 10) {
+                    firstEcho = echo;
+                    break;
+                }
+            }
+            
+            distanceEl.textContent = firstEcho ? firstEcho.distance.toFixed(2) : '--';
+            
+            drawEchoes();
+            isListening = false;
+            
+            if (continuous) {
+                setTimeout(ping, 100);
+            }
+        }
+        
+        function drawEchoes() {
+            const w = canvas.width / window.devicePixelRatio;
+            const h = canvas.height / window.devicePixelRatio;
+            
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, w, h);
+            
+            if (echoData.length === 0) return;
+            
+            // Find max amplitude for scaling
+            const maxAmp = Math.max(...echoData.map(e => e.amplitude), 0.1);
+            
+            // Draw grid
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 1;
+            
+            // Distance markers
+            const maxDist = (listenTime / 1000) * SPEED_OF_SOUND / 2;
+            for (let d = 0; d <= maxDist; d += 1) {
+                const x = (d / maxDist) * w;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, h);
+                ctx.stroke();
+                
+                ctx.fillStyle = '#444';
+                ctx.font = '10px sans-serif';
+                ctx.fillText(d + 'm', x + 3, h - 5);
+            }
+            
+            // Draw threshold line
+            ctx.strokeStyle = '#ff444444';
+            ctx.beginPath();
+            const threshY = h - (threshold / maxAmp) * h;
+            ctx.moveTo(0, threshY);
+            ctx.lineTo(w, threshY);
+            ctx.stroke();
+            
+            // Draw echo envelope
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            echoData.forEach((echo, i) => {
+                const x = (echo.distance / maxDist) * w;
+                const y = h - (echo.amplitude / maxAmp) * h;
+                
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+            
+            // Fill under curve
+            ctx.fillStyle = 'rgba(0, 255, 136, 0.2)';
+            ctx.lineTo(w, h);
+            ctx.lineTo(0, h);
+            ctx.fill();
+            
+            // Highlight echoes above threshold
+            ctx.fillStyle = '#00ff88';
+            echoData.forEach(echo => {
+                if (echo.amplitude > threshold) {
+                    const x = (echo.distance / maxDist) * w;
+                    const y = h - (echo.amplitude / maxAmp) * h;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+        
+        // Controls
+        document.getElementById('ping').addEventListener('click', ping);
+        
+        document.getElementById('continuous').addEventListener('click', (e) => {
+            continuous = !continuous;
+            e.target.classList.toggle('active', continuous);
+            e.target.textContent = continuous ? 'Stop' : 'Continuous';
+            if (continuous) ping();
+        });
+        
+        document.getElementById('freq').addEventListener('input', (e) => {
+            freq = parseInt(e.target.value);
+            document.getElementById('freqVal').textContent = freq;
+        });
+        
+        document.getElementById('duration').addEventListener('input', (e) => {
+            chirpDuration = parseInt(e.target.value);
+            document.getElementById('durationVal').textContent = chirpDuration;
+        });
+        
+        document.getElementById('listen').addEventListener('input', (e) => {
+            listenTime = parseInt(e.target.value);
+            document.getElementById('listenVal').textContent = listenTime;
+        });
+        
+        document.getElementById('thresh').addEventListener('input', (e) => {
+            threshold = parseFloat(e.target.value);
+            document.getElementById('threshVal').textContent = threshold.toFixed(2);
+        });
+        
+        // Initial draw
+        drawEchoes();
+    </script>
+</body>
+</html>
