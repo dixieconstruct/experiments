@@ -94,24 +94,24 @@
             osc.type = 'sine';
             osc.frequency.value = freq;
             
-            // Add slight detune for shimmer
+            // Second oscillator one octave higher
             const osc2 = audioCtx.createOscillator();
             osc2.type = 'sine';
-            osc2.frequency.value = freq * 1.002;
+            osc2.frequency.value = freq * 2;
             
             const gain2 = audioCtx.createGain();
             
-            // Gentle envelope
+            // Gentle envelope with long release
             const now = audioCtx.currentTime;
             const volume = Math.min(0.15, intensity * 0.3);
             
             gain.gain.setValueAtTime(0, now);
             gain.gain.linearRampToValueAtTime(volume, now + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 2.5);
             
             gain2.gain.setValueAtTime(0, now);
-            gain2.gain.linearRampToValueAtTime(volume * 0.5, now + 0.02);
-            gain2.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
+            gain2.gain.linearRampToValueAtTime(volume * 0.3, now + 0.02);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + 3.0);
             
             osc.connect(gain);
             osc2.connect(gain2);
@@ -120,8 +120,8 @@
             
             osc.start(now);
             osc2.start(now);
-            osc.stop(now + 1);
-            osc2.stop(now + 1.2);
+            osc.stop(now + 2.6);
+            osc2.stop(now + 3.2);
         }
         
         // Track active sound spots to avoid too many simultaneous sounds
@@ -144,23 +144,35 @@
             const freq = pentatonic[noteIndex % pentatonic.length];
             
             const osc = audioCtx.createOscillator();
+            const osc2 = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
+            const gain2 = audioCtx.createGain();
             
             osc.type = 'sine';
             osc.frequency.value = freq;
+            osc2.type = 'sine';
+            osc2.frequency.value = freq * 2;
             
             const time = audioCtx.currentTime;
             const volume = Math.min(0.08, intensity * 0.15);
             
             gain.gain.setValueAtTime(0, time);
             gain.gain.linearRampToValueAtTime(volume, time + 0.01);
-            gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+            gain.gain.exponentialRampToValueAtTime(0.001, time + 1.5);
+            
+            gain2.gain.setValueAtTime(0, time);
+            gain2.gain.linearRampToValueAtTime(volume * 0.25, time + 0.01);
+            gain2.gain.exponentialRampToValueAtTime(0.001, time + 1.8);
             
             osc.connect(gain);
+            osc2.connect(gain2);
             gain.connect(masterGain);
+            gain2.connect(masterGain);
             
             osc.start(time);
-            osc.stop(time + 0.5);
+            osc2.start(time);
+            osc.stop(time + 1.6);
+            osc2.stop(time + 2.0);
         }
         
         // Grid size - will be calculated based on viewport
