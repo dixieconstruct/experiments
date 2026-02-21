@@ -18,10 +18,10 @@
         }
         
         #fluid {
-            font-family: 'Courier New', monospace;
+            font-family: 'Courier New', Consolas, monospace;
             font-size: 12px;
             line-height: 14px;
-            letter-spacing: 1px;
+            letter-spacing: 0px;
             white-space: pre;
             cursor: crosshair;
             padding: 10px 20px;
@@ -32,6 +32,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            font-variant-ligatures: none;
+            text-rendering: geometricPrecision;
         }
         
         .back-link {
@@ -190,41 +192,41 @@
                     const strongThreshold = 0.04;
                     const veryStrongThreshold = 0.08;
                     
-                    let char = '·';  // Default calm water
+                    let char = '.';  // Default calm water
                     
                     const absDx = Math.abs(dx);
                     const absDy = Math.abs(dy);
                     
                     if (absDx < threshold && absDy < threshold) {
                         // Flat - show ripple based on height
-                        if (h > 0.08) char = '○';
-                        else if (h > 0.04) char = '◦';
-                        else if (h < -0.08) char = '•';
-                        else if (h < -0.04) char = '∘';
+                        if (h > 0.08) char = 'O';
+                        else if (h > 0.04) char = 'o';
+                        else if (h < -0.08) char = '@';
+                        else if (h < -0.04) char = '*';
                         else if (Math.abs(h) > 0.01) char = '~';
-                        else char = '·';
+                        else char = '.';
                     } else if (absDx > absDy * 1.5) {
                         // Mostly horizontal slope
-                        if (dx > veryStrongThreshold) char = '《';
+                        if (dx > veryStrongThreshold) char = '(';
                         else if (dx > strongThreshold) char = '\\';
                         else if (dx > threshold) char = '(';
-                        else if (dx < -veryStrongThreshold) char = '》';
+                        else if (dx < -veryStrongThreshold) char = ')';
                         else if (dx < -strongThreshold) char = '/';
                         else if (dx < -threshold) char = ')';
                     } else if (absDy > absDx * 1.5) {
                         // Mostly vertical slope
-                        if (dy > veryStrongThreshold) char = '≡';
-                        else if (dy > strongThreshold) char = '=';
+                        if (dy > veryStrongThreshold) char = '=';
+                        else if (dy > strongThreshold) char = '-';
                         else if (dy > threshold) char = '-';
-                        else if (dy < -veryStrongThreshold) char = '≡';
-                        else if (dy < -strongThreshold) char = '=';
+                        else if (dy < -veryStrongThreshold) char = '=';
+                        else if (dy < -strongThreshold) char = '-';
                         else if (dy < -threshold) char = '-';
                     } else {
                         // Diagonal slopes
-                        if (dx > 0 && dy > 0) char = absDx > strongThreshold ? '╲' : '`';
-                        else if (dx > 0 && dy < 0) char = absDx > strongThreshold ? '╱' : '\'';
-                        else if (dx < 0 && dy > 0) char = absDx > strongThreshold ? '╱' : '\'';
-                        else if (dx < 0 && dy < 0) char = absDx > strongThreshold ? '╲' : '`';
+                        if (dx > 0 && dy > 0) char = '\\';
+                        else if (dx > 0 && dy < 0) char = '/';
+                        else if (dx < 0 && dy > 0) char = '/';
+                        else if (dx < 0 && dy < 0) char = '\\';
                     }
                     
                     output += char;
