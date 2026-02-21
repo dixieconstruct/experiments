@@ -79,13 +79,14 @@
         function playChime(x, y, intensity) {
             if (!audioCtx || intensity < 0.05) return;
             
-            // Map position to pitch (pentatonic scale for pleasantness)
-            const pentatonic = [261.6, 293.7, 329.6, 392.0, 440.0, 523.3, 587.3, 659.3];
-            const noteIndex = Math.floor((x / COLS) * pentatonic.length);
-            const baseFreq = pentatonic[noteIndex % pentatonic.length];
+            // Major chord frequencies (C major across octaves)
+            // C3, E3, G3, C4, E4, G4, C5, E5
+            const majorChord = [130.8, 164.8, 196.0, 261.6, 329.6, 392.0, 523.3, 659.3];
+            const noteIndex = Math.floor((x / COLS) * majorChord.length);
+            const baseFreq = majorChord[noteIndex % majorChord.length];
             
-            // Y position shifts octave slightly
-            const freq = baseFreq * (1 + (y / ROWS) * 0.5);
+            // Y position shifts slightly within the octave range
+            const freq = baseFreq * (1 + (y / ROWS) * 0.1);
             
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
@@ -136,10 +137,11 @@
             if (now - lastEdgeSoundTime < EDGE_SOUND_THROTTLE) return;
             lastEdgeSoundTime = now;
             
-            // Higher pentatonic for edges
-            const pentatonic = [523.3, 587.3, 659.3, 784.0, 880.0, 1046.5];
-            const noteIndex = Math.floor(((x / COLS) + (y / ROWS)) * pentatonic.length / 2);
-            const freq = pentatonic[noteIndex % pentatonic.length];
+            // Same major chord for edges, higher octave
+            // G4, C5, E5, G5, C6
+            const majorChord = [392.0, 523.3, 659.3, 784.0, 1046.5];
+            const noteIndex = Math.floor(((x / COLS) + (y / ROWS)) * majorChord.length / 2);
+            const freq = majorChord[noteIndex % majorChord.length];
             
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
