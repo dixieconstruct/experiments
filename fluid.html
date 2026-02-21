@@ -71,7 +71,7 @@
             if (audioCtx) return;
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             masterGain = audioCtx.createGain();
-            masterGain.gain.value = 0.3;
+            masterGain.gain.value = 0.6;
             masterGain.connect(audioCtx.destination);
         }
         
@@ -96,7 +96,7 @@
             
             // Gentle envelope with long release
             const now = audioCtx.currentTime;
-            const volume = Math.min(0.12, intensity * 0.25);
+            const volume = Math.min(0.25, intensity * 0.5);
             
             gain.gain.setValueAtTime(0, now);
             gain.gain.linearRampToValueAtTime(volume, now + 0.02);
@@ -135,7 +135,7 @@
             osc.frequency.value = freq;
             
             const time = audioCtx.currentTime;
-            const volume = Math.min(0.06, intensity * 0.12);
+            const volume = Math.min(0.15, intensity * 0.3);
             
             gain.gain.setValueAtTime(0, time);
             gain.gain.linearRampToValueAtTime(volume, time + 0.01);
