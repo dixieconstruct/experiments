@@ -20,14 +20,18 @@
         #fluid {
             font-family: 'Courier New', monospace;
             font-size: 12px;
-            line-height: 12px;
+            line-height: 14px;
             letter-spacing: 1px;
             white-space: pre;
             cursor: crosshair;
-            padding: 20px;
+            padding: 10px 20px;
             user-select: none;
             touch-action: none;
             margin: 0 auto;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         .back-link {
@@ -57,13 +61,30 @@
     <script>
         const fluidEl = document.getElementById('fluid');
         
-        // Grid size
-        const COLS = 70;
-        const ROWS = 35;
+        // Grid size - will be calculated based on viewport
+        let COLS = 70;
+        let ROWS = 35;
         
         // Wave state (height and velocity)
         let height = [];
         let velocity = [];
+        
+        function resizeGrid() {
+            const charWidth = 10;  // approximate char width in pixels
+            const charHeight = 14; // approximate char height in pixels
+            
+            const availWidth = window.innerWidth - 40;
+            const availHeight = window.innerHeight - 60;
+            
+            const newCols = Math.floor(availWidth / charWidth);
+            const newRows = Math.floor(availHeight / charHeight);
+            
+            if (newCols !== COLS || newRows !== ROWS) {
+                COLS = Math.max(20, Math.min(120, newCols));
+                ROWS = Math.max(15, Math.min(60, newRows));
+                init();
+            }
+        }
         
         // ASCII chars for different slopes
         // Center = flat, others show direction of slope
@@ -268,7 +289,8 @@
             requestAnimationFrame(loop);
         }
         
-        init();
+        resizeGrid();
+        window.addEventListener('resize', resizeGrid);
         loop();
     </script>
 </body>
