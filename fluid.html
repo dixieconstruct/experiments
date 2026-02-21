@@ -214,7 +214,10 @@
         }
         
         // Input handling
-        function handleInput(clientX, clientY) {
+        let lastDragTime = 0;
+        const DRAG_THROTTLE = 100; // ms between drag drops
+        
+        function handleInput(clientX, clientY, isDrag = false) {
             const rect = fluidEl.getBoundingClientRect();
             const charWidth = rect.width / COLS;
             const charHeight = rect.height / ROWS;
@@ -223,31 +226,38 @@
             const y = (clientY - rect.top) / charHeight;
             
             if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
-                dropRock(x, y, 3, 0.8);
+                if (isDrag) {
+                    const now = performance.now();
+                    if (now - lastDragTime < DRAG_THROTTLE) return;
+                    lastDragTime = now;
+                    dropRock(x, y, 2, 0.5); // Smaller, gentler drops when dragging
+                } else {
+                    dropRock(x, y, 3, 0.8); // Full rock on click
+                }
             }
         }
         
         fluidEl.addEventListener('mousedown', (e) => {
-            handleInput(e.clientX, e.clientY);
+            handleInput(e.clientX, e.clientY, false);
         });
         
         fluidEl.addEventListener('mousemove', (e) => {
             if (e.buttons === 1) {
-                handleInput(e.clientX, e.clientY);
+                handleInput(e.clientX, e.clientY, true);
             }
         });
         
         fluidEl.addEventListener('touchstart', (e) => {
             e.preventDefault();
             for (const touch of e.touches) {
-                handleInput(touch.clientX, touch.clientY);
+                handleInput(touch.clientX, touch.clientY, false);
             }
         });
         
         fluidEl.addEventListener('touchmove', (e) => {
             e.preventDefault();
             for (const touch of e.touches) {
-                handleInput(touch.clientX, touch.clientY);
+                handleInput(touch.clientX, touch.clientY, true);
             }
         });
         
