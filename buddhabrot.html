@@ -175,6 +175,18 @@
             <label>Exposure <span id="exposureVal">1.0</span></label>
             <input type="range" id="exposure" min="0.1" max="5" step="0.1" value="1">
         </div>
+        <h2 style="margin-top:15px">Line Mode</h2>
+        <div class="param">
+            <label><input type="checkbox" id="lineMode"> Draw trajectories</label>
+        </div>
+        <div class="param">
+            <label>Max line length <span id="maxLineLenVal">50</span></label>
+            <input type="range" id="maxLineLen" min="5" max="200" value="50">
+        </div>
+        <div class="param">
+            <label>Fade with iteration <span id="lineFadeVal">0.0</span></label>
+            <input type="range" id="lineFade" min="0" max="1" step="0.1" value="0">
+        </div>
         <button id="reset">Reset View</button>
         <button id="clear">Clear & Restart</button>
     </div>
@@ -201,6 +213,9 @@
         let minIter = 20;
         let samplesPerFrame = 5000;
         let exposure = 1.0;
+        let lineMode = false;
+        let maxLineLen = 50;
+        let lineFade = 0;
         
         function resize() {
             width = window.innerWidth;
@@ -250,6 +265,33 @@
             };
         }
         
+        // Bresenham's line algorithm
+        function drawLine(x0, y0, x1, y1, accum, weight) {
+            const dx = Math.abs(x1 - x0);
+            const dy = Math.abs(y1 - y0);
+            const sx = x0 < x1 ? 1 : -1;
+            const sy = y0 < y1 ? 1 : -1;
+            let err = dx - dy;
+            
+            while (true) {
+                if (x0 >= 0 && x0 < width && y0 >= 0 && y0 < height) {
+                    accum[y0 * width + x0] += weight;
+                }
+                
+                if (x0 === x1 && y0 === y1) break;
+                
+                const e2 = 2 * err;
+                if (e2 > -dy) {
+                    err -= dy;
+                    x0 += sx;
+                }
+                if (e2 < dx) {
+                    err += dx;
+                    y0 += sy;
+                }
+            }
+        }
+        
         // Trace orbit and accumulate if escapes
         function traceOrbit(c, channel) {
             const trajectory = [];
@@ -270,10 +312,28 @@
             if (iter < maxIter && iter > minIter) {
                 const accum = channel === 0 ? accumR : channel === 1 ? accumG : accumB;
                 
-                for (const p of trajectory) {
-                    const pixel = complexToPixel(p.x, p.y);
-                    if (pixel.x >= 0 && pixel.x < width && pixel.y >= 0 && pixel.y < height) {
-                        accum[pixel.y * width + pixel.x]++;
+                if (lineMode) {
+                    // Line mode: draw segments between consecutive points
+                    for (let i = 0; i < trajectory.length - 1; i++) {
+                        const p0 = complexToPixel(trajectory[i].x, trajectory[i].y);
+                        const p1 = complexToPixel(trajectory[i+1].x, trajectory[i+1].y);
+                        
+                        // Check line length
+                        const len = Math.sqrt((p1.x-p0.x)**2 + (p1.y-p0.y)**2);
+                        if (len > maxLineLen) continue;
+                        
+                        // Weight fades with iteration if enabled
+                        const weight = 1 - lineFade * (i / trajectory.length);
+                        
+                        drawLine(p0.x, p0.y, p1.x, p1.y, accum, weight);
+                    }
+                } else {
+                    // Classic mode: plot points
+                    for (const p of trajectory) {
+                        const pixel = complexToPixel(p.x, p.y);
+                        if (pixel.x >= 0 && pixel.x < width && pixel.y >= 0 && pixel.y < height) {
+                            accum[pixel.y * width + pixel.x]++;
+                        }
                     }
                 }
             }
@@ -386,6 +446,21 @@
         document.getElementById('exposure').addEventListener('input', (e) => {
             exposure = parseFloat(e.target.value);
             document.getElementById('exposureVal').textContent = exposure.toFixed(1);
+        });
+        
+        document.getElementById('lineMode').addEventListener('change', (e) => {
+            lineMode = e.target.checked;
+            clearAccum();
+        });
+        
+        document.getElementById('maxLineLen').addEventListener('input', (e) => {
+            maxLineLen = parseInt(e.target.value);
+            document.getElementById('maxLineLenVal').textContent = maxLineLen;
+        });
+        
+        document.getElementById('lineFade').addEventListener('input', (e) => {
+            lineFade = parseFloat(e.target.value);
+            document.getElementById('lineFadeVal').textContent = lineFade.toFixed(1);
         });
         
         document.getElementById('reset').addEventListener('click', () => {
