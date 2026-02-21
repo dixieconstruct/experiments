@@ -361,14 +361,15 @@
             if (ear.right > rightBaseline) rightBaseline = rightBaseline * 0.95 + ear.right * 0.05;
             
             // Detect winks: one eye closed, other open
-            const leftThreshold = leftBaseline * 0.7;
-            const rightThreshold = rightBaseline * 0.7;
+            // Higher threshold = more sensitive (triggers easier)
+            const leftThreshold = leftBaseline * 0.85;
+            const rightThreshold = rightBaseline * 0.85;
             const leftClosed = ear.left < leftThreshold;
             const rightClosed = ear.right < rightThreshold;
             
             // Wink = one eye closed while other is relatively open
-            const leftWinkDetected = leftClosed && ear.right > rightThreshold * 0.9;
-            const rightWinkDetected = rightClosed && ear.left > leftThreshold * 0.9;
+            const leftWinkDetected = leftClosed && ear.right > rightThreshold * 0.95;
+            const rightWinkDetected = rightClosed && ear.left > leftThreshold * 0.95;
             
             const now = performance.now();
             
