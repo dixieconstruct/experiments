@@ -411,18 +411,26 @@
             clearAccum();
         });
         
-        // Touch to zoom
+        // Touch to zoom (1 finger = zoom in, 2 fingers = zoom out)
         canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            const touch = e.touches[0];
             const rect = canvas.getBoundingClientRect();
+            
+            // Use first touch for position
+            const touch = e.touches[0];
             const px = touch.clientX - rect.left;
             const py = touch.clientY - rect.top;
             
             const c = pixelToComplex(px, py);
             centerX = c.x;
             centerY = c.y;
-            zoom *= 2;
+            
+            // 2+ fingers = zoom out, 1 finger = zoom in
+            if (e.touches.length >= 2) {
+                zoom /= 2;
+            } else {
+                zoom *= 2;
+            }
             
             clearAccum();
         });
