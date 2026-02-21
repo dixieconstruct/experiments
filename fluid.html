@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>ASCII Fluid</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #000;
+            color: #0f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden;
+            font-family: monospace;
+        }
+        
+        #fluid {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 12px;
+            letter-spacing: 1px;
+            white-space: pre;
+            cursor: crosshair;
+            padding: 20px;
+            user-select: none;
+            touch-action: none;
+            margin: 0 auto;
+        }
+        
+        .back-link {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: #0a0;
+            text-decoration: none;
+            font-size: 1.2em;
+            z-index: 100;
+        }
+        
+        #info {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            color: #060;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">←</a>
+    <pre id="fluid"></pre>
+    <div id="info">Click/tap to drop rocks</div>
+
+    <script>
+        const fluidEl = document.getElementById('fluid');
+        
+        // Grid size
+        const COLS = 80;
+        const ROWS = 40;
+        
+        // Fluid state (velocity and density)
+        let u = []; // x velocity
+        let v = []; // y velocity
+        let density = [];
+        
+        // ASCII gradient for density visualization
+        const CHARS = ' .:-=+*#%@';
+        
+        // Initialize
+        function init() {
+            for (let i = 0; i < COLS * ROWS; i++) {
+                u[i] = 0;
+                v[i] = 0;
+                density[i] = 0;
+            }
+        }
+        
+        function idx(x, y) {
+            return y * COLS + x;
+        }
+        
+        // Add density and velocity at a point (rock drop)
+        function addSource(x, y, radius, amount) {
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist <= radius) {
+                        const px = Math.floor(x + dx);
+                        const py = Math.floor(y + dy);
+                        if (px >= 0 && px < COLS && py >= 0 && py < ROWS) {
+                            const i = idx(px, py);
+                            const falloff = 1 - dist / radius;
+                            density[i] += amount * falloff;
+                            // Add outward velocity (ripple)
+                            if (dist > 0) {
+                                u[i] += (dx / dist) * amount * 0.5;
+                                v[i] += (dy / dist) * amount * 0.5;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Simple fluid simulation step
+        function simulate() {
+            const newU = new Array(COLS * ROWS).fill(0);
+            const newV = new Array(COLS * ROWS).fill(0);
+            const newDensity = new Array(COLS * ROWS).fill(0);
+            
+            const damping = 0.98;
+            const diffusion = 0.1;
+            
+            for (let y = 1; y < ROWS - 1; y++) {
+                for (let x = 1; x < COLS - 1; x++) {
+                    const i = idx(x, y);
+                    
+                    // Advection - move density along velocity
+                    const srcX = x - u[i] * 0.5;
+                    const srcY = y - v[i] * 0.5;
+                    
+                    // Bilinear interpolation
+                    const x0 = Math.max(0, Math.min(COLS - 2, Math.floor(srcX)));
+                    const y0 = Math.max(0, Math.min(ROWS - 2, Math.floor(srcY)));
+                    const x1 = x0 + 1;
+                    const y1 = y0 + 1;
+                    const fx = srcX - x0;
+                    const fy = srcY - y0;
+                    
+                    newDensity[i] = 
+                        density[idx(x0, y0)] * (1-fx) * (1-fy) +
+                        density[idx(x1, y0)] * fx * (1-fy) +
+                        density[idx(x0, y1)] * (1-fx) * fy +
+                        density[idx(x1, y1)] * fx * fy;
+                    
+                    // Diffusion
+                    const laplacian = 
+                        density[idx(x-1, y)] + density[idx(x+1, y)] +
+                        density[idx(x, y-1)] + density[idx(x, y+1)] -
+                        4 * density[i];
+                    newDensity[i] += laplacian * diffusion;
+                    
+                    // Velocity diffusion
+                    newU[i] = u[i] * damping + (
+                        u[idx(x-1, y)] + u[idx(x+1, y)] +
+                        u[idx(x, y-1)] + u[idx(x, y+1)] - 4 * u[i]
+                    ) * diffusion;
+                    
+                    newV[i] = v[i] * damping + (
+                        v[idx(x-1, y)] + v[idx(x+1, y)] +
+                        v[idx(x, y-1)] + v[idx(x, y+1)] - 4 * v[i]
+                    ) * diffusion;
+                    
+                    // Gravity
+                    newV[i] += 0.02;
+                }
+            }
+            
+            // Decay (slower)
+            for (let i = 0; i < COLS * ROWS; i++) {
+                newDensity[i] *= 0.99;
+            }
+            
+            u = newU;
+            v = newV;
+            density = newDensity;
+        }
+        
+        // Render to ASCII
+        function render() {
+            let output = '';
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    const d = Math.min(1, Math.max(0, density[idx(x, y)]));
+                    const charIdx = Math.floor(d * (CHARS.length - 1));
+                    output += CHARS[charIdx];
+                }
+                output += '\n';
+            }
+            fluidEl.textContent = output;
+        }
+        
+        // Input handling
+        function handleInput(clientX, clientY) {
+            const rect = fluidEl.getBoundingClientRect();
+            const charWidth = rect.width / COLS;
+            const charHeight = rect.height / ROWS;
+            
+            const x = (clientX - rect.left) / charWidth;
+            const y = (clientY - rect.top) / charHeight;
+            
+            if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+                addSource(x, y, 4, 1.5);
+            }
+        }
+        
+        fluidEl.addEventListener('mousedown', (e) => {
+            handleInput(e.clientX, e.clientY);
+        });
+        
+        fluidEl.addEventListener('mousemove', (e) => {
+            if (e.buttons === 1) {
+                handleInput(e.clientX, e.clientY);
+            }
+        });
+        
+        fluidEl.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            for (const touch of e.touches) {
+                handleInput(touch.clientX, touch.clientY);
+            }
+        });
+        
+        fluidEl.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            for (const touch of e.touches) {
+                handleInput(touch.clientX, touch.clientY);
+            }
+        });
+        
+        // Main loop
+        function loop() {
+            simulate();
+            render();
+            requestAnimationFrame(loop);
+        }
+        
+        init();
+        // Add some initial splashes
+        addSource(20, 15, 5, 2);
+        addSource(60, 20, 5, 2);
+        addSource(40, 30, 5, 2);
+        loop();
+    </script>
+</body>
+</html>
