@@ -197,6 +197,8 @@
     </div>
     
     <p class="info">Point your phone at a surface. The display shows echo intensity over time (distance). Works best in quiet environments with hard surfaces.</p>
+    
+    <div id="log" style="width:100%; max-width:600px; background:#111; border-radius:8px; padding:10px; margin-top:15px; font-family:monospace; font-size:11px; color:#888; max-height:150px; overflow-y:auto; white-space:pre-wrap;"></div>
 
     <script>
         const canvas = document.getElementById('canvas');
@@ -221,6 +223,13 @@
         let echoData = [];
         let latencyOffset = 0; // Calibrated audio latency
         const SPEED_OF_SOUND = 343; // m/s at 20°C
+        
+        function log(msg) {
+            const logEl = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logEl.textContent += `[${time}] ${msg}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
         
         function resize() {
             const rect = canvas.parentElement.getBoundingClientRect();
@@ -525,7 +534,7 @@
                     }
                 }
                 
-                console.log('Cal ping', i, '- max amp:', maxAmp.toFixed(3), 'at', maxTime.toFixed(0), 'ms');
+                log(`Ping ${i}: max amp ${maxAmp.toFixed(3)} at ${maxTime.toFixed(0)}ms`);
                 
                 if (maxAmp > 0.02) { // Very low threshold for calibration
                     measurements.push(maxTime);
@@ -534,7 +543,7 @@
                 isListening = false;
             }
             
-            console.log('All measurements:', measurements);
+            log(`Measurements: [${measurements.map(m => m.toFixed(0)).join(', ')}]`);
             
             if (measurements.length > 0) {
                 // Use median to reject outliers
@@ -543,10 +552,11 @@
                 latencyOffset = median;
                 btn.textContent = `Cal: ${median.toFixed(0)}ms`;
                 distanceEl.textContent = '0.00';
-                console.log('Calibrated offset:', median);
+                log(`Calibrated! Offset: ${median.toFixed(0)}ms`);
             } else {
                 latencyOffset = oldOffset;
                 btn.textContent = 'Failed - no signal';
+                log('Calibration failed - no signal detected');
             }
             
             btn.disabled = false;
