@@ -24,16 +24,18 @@
             letter-spacing: 0px;
             white-space: pre;
             cursor: crosshair;
-            padding: 5px;
+            padding: 0;
+            padding-bottom: 30px;
             user-select: none;
             touch-action: none;
-            margin: 0 auto;
+            margin: 0;
             flex: 1;
             display: flex;
             align-items: center;
             justify-content: center;
             font-variant-ligatures: none;
             text-rendering: geometricPrecision;
+            width: 100%;
         }
         
         .back-link {
@@ -53,15 +55,9 @@
             color: #060;
             font-size: 12px;
             z-index: 100;
-            background: rgba(0,0,0,0.8);
-            padding: 4px 8px;
-            border-radius: 4px;
         }
         
         @media (max-width: 600px) {
-            #fluid {
-                padding: 2px;
-            }
             #info {
                 bottom: 5px;
                 left: 5px;
