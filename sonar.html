@@ -441,7 +441,6 @@
             ctx.stroke();
             
             // Draw blanking zone
-            const blankDist = (blankTime / 1000) * SPEED_OF_SOUND / 2;
             const blankX = (blankDist / maxDist) * w;
             ctx.fillStyle = 'rgba(255, 100, 100, 0.1)';
             ctx.fillRect(0, 20, blankX, h - 20);
