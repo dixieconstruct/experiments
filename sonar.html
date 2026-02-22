@@ -363,8 +363,9 @@
             
             // Find first significant echo (after blanking period)
             let firstEcho = null;
+            const blankDist = (blankTime / 1000) * SPEED_OF_SOUND / 2;
             for (const echo of echoData) {
-                if (echo.amplitude > threshold && echo.time > blankTime) {
+                if (echo.amplitude > threshold && echo.distance > blankDist) {
                     firstEcho = echo;
                     break;
                 }
