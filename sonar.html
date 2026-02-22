@@ -194,6 +194,9 @@
             <label>Blanking <span id="blankVal">30</span>ms</label>
             <input type="range" id="blank" min="0" max="100" step="5" value="30">
         </div>
+        <div class="param">
+            <label><input type="checkbox" id="logScale"> Log scale</label>
+        </div>
     </div>
     
     <p class="info">Point your phone at a surface. The display shows echo intensity over time (distance). Works best in quiet environments with hard surfaces.</p>
@@ -216,6 +219,7 @@
         let listenTime = 200;
         let threshold = 0.15;
         let blankTime = 30;
+        let logScale = false;
         
         // State
         let isListening = false;
@@ -386,8 +390,17 @@
             
             if (echoData.length === 0) return;
             
-            // Find max amplitude for scaling
-            const maxAmp = Math.max(...echoData.map(e => e.amplitude), 0.1);
+            // Find max amplitude - for log scale, find max AFTER blanking zone
+            let maxAmp = 0.001;
+            const blankDist = (blankTime / 1000) * SPEED_OF_SOUND / 2;
+            
+            for (const e of echoData) {
+                if (logScale && e.distance < blankDist) continue; // Skip blanking zone for scaling
+                maxAmp = Math.max(maxAmp, e.amplitude);
+            }
+            
+            // For log scale, also track min non-zero
+            const minAmp = 0.001;
             
             // Draw grid
             ctx.strokeStyle = '#222';
@@ -438,9 +451,21 @@
             ctx.lineWidth = 2;
             ctx.beginPath();
             
+            function ampToY(amp) {
+                if (logScale) {
+                    // Log scale: map log(amp) to screen
+                    const logMin = Math.log10(minAmp);
+                    const logMax = Math.log10(maxAmp);
+                    const logVal = Math.log10(Math.max(amp, minAmp));
+                    return h - ((logVal - logMin) / (logMax - logMin)) * (h - 20);
+                } else {
+                    return h - (amp / maxAmp) * (h - 20);
+                }
+            }
+            
             echoData.forEach((echo, i) => {
                 const x = (echo.distance / maxDist) * w;
-                const y = h - (echo.amplitude / maxAmp) * h;
+                const y = ampToY(echo.amplitude);
                 
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
@@ -456,9 +481,9 @@
             // Highlight echoes above threshold
             ctx.fillStyle = '#00ff88';
             echoData.forEach(echo => {
-                if (echo.amplitude > threshold) {
+                if (echo.amplitude > threshold && echo.distance > blankDist) {
                     const x = (echo.distance / maxDist) * w;
-                    const y = h - (echo.amplitude / maxAmp) * h;
+                    const y = ampToY(echo.amplitude);
                     ctx.beginPath();
                     ctx.arc(x, y, 4, 0, Math.PI * 2);
                     ctx.fill();
@@ -499,6 +524,11 @@
         document.getElementById('blank').addEventListener('input', (e) => {
             blankTime = parseInt(e.target.value);
             document.getElementById('blankVal').textContent = blankTime;
+        });
+        
+        document.getElementById('logScale').addEventListener('change', (e) => {
+            logScale = e.target.checked;
+            drawEchoes();
         });
         
         document.getElementById('calibrate').addEventListener('click', async () => {
