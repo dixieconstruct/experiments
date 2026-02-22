@@ -311,12 +311,19 @@
         }
         
         async function ping(forCalibration = false) {
-            if (isListening) return;
-            if (!await initAudio()) return;
+            if (isListening) {
+                log('Ping blocked - already listening');
+                return;
+            }
+            if (!await initAudio()) {
+                log('Audio init failed');
+                return;
+            }
             
             isListening = true;
             echoData = [];
             
+            log('Ping started...');
             const startTime = performance.now();
             
             // Emit chirp
@@ -360,6 +367,7 @@
             }
             
             distanceEl.textContent = firstEcho ? firstEcho.distance.toFixed(2) : '--';
+            log(`Ping done. First echo: ${firstEcho ? firstEcho.distance.toFixed(2) + 'm' : 'none'}`);
             
             drawEchoes();
             isListening = false;
