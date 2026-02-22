@@ -489,17 +489,49 @@
             btn.textContent = 'Calibrating...';
             btn.disabled = true;
             
-            // Temporarily set latency to 0 for raw measurements
+            // Temporarily set latency to 0 and lower threshold for calibration
             const oldOffset = latencyOffset;
+            const oldThresh = threshold;
             latencyOffset = 0;
             
             // Run several pings and collect spike times
             const measurements = [];
             for (let i = 0; i < 5; i++) {
                 await new Promise(r => setTimeout(r, 300));
-                const t = await ping(true);
-                console.log('Cal ping', i, 'result:', t);
-                if (t !== null) measurements.push(t);
+                
+                // Do a ping and find max amplitude
+                if (!await initAudio()) continue;
+                isListening = true;
+                echoData = [];
+                
+                const startTime = performance.now();
+                emitChirp();
+                await new Promise(r => setTimeout(r, chirpDuration + 5));
+                
+                const samples = Math.floor(listenTime / 5);
+                for (let j = 0; j < samples; j++) {
+                    const rawElapsed = performance.now() - startTime - chirpDuration;
+                    const amplitude = getEnvelope();
+                    echoData.push({ rawTime: rawElapsed, amplitude });
+                    await new Promise(r => setTimeout(r, 5));
+                }
+                
+                // Find max amplitude and its time
+                let maxAmp = 0, maxTime = 0;
+                for (const echo of echoData) {
+                    if (echo.amplitude > maxAmp) {
+                        maxAmp = echo.amplitude;
+                        maxTime = echo.rawTime;
+                    }
+                }
+                
+                console.log('Cal ping', i, '- max amp:', maxAmp.toFixed(3), 'at', maxTime.toFixed(0), 'ms');
+                
+                if (maxAmp > 0.02) { // Very low threshold for calibration
+                    measurements.push(maxTime);
+                }
+                
+                isListening = false;
             }
             
             console.log('All measurements:', measurements);
