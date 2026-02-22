@@ -486,16 +486,23 @@
         
         document.getElementById('calibrate').addEventListener('click', async () => {
             const btn = document.getElementById('calibrate');
-            btn.textContent = 'Hold phone flat...';
+            btn.textContent = 'Calibrating...';
             btn.disabled = true;
             
-            // Run several pings and average
+            // Temporarily set latency to 0 for raw measurements
+            const oldOffset = latencyOffset;
+            latencyOffset = 0;
+            
+            // Run several pings and collect spike times
             const measurements = [];
             for (let i = 0; i < 5; i++) {
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => setTimeout(r, 300));
                 const t = await ping(true);
+                console.log('Cal ping', i, 'result:', t);
                 if (t !== null) measurements.push(t);
             }
+            
+            console.log('All measurements:', measurements);
             
             if (measurements.length > 0) {
                 // Use median to reject outliers
@@ -504,14 +511,16 @@
                 latencyOffset = median;
                 btn.textContent = `Cal: ${median.toFixed(0)}ms`;
                 distanceEl.textContent = '0.00';
+                console.log('Calibrated offset:', median);
             } else {
-                btn.textContent = 'Failed';
+                latencyOffset = oldOffset;
+                btn.textContent = 'Failed - no signal';
             }
             
+            btn.disabled = false;
             setTimeout(() => {
                 btn.textContent = 'Calibrate';
-                btn.disabled = false;
-            }, 2000);
+            }, 3000);
         });
         
         // Initial draw
