@@ -536,10 +536,14 @@
             btn.textContent = 'Calibrating...';
             btn.disabled = true;
             
-            // Temporarily set latency to 0 and lower threshold for calibration
+            // Force reset listening state
+            isListening = false;
+            
+            // Temporarily set latency to 0 for calibration
             const oldOffset = latencyOffset;
-            const oldThresh = threshold;
             latencyOffset = 0;
+            
+            log('Starting calibration...');
             
             // Run several pings and collect spike times
             const measurements = [];
@@ -547,7 +551,10 @@
                 await new Promise(r => setTimeout(r, 300));
                 
                 // Do a ping and find max amplitude
-                if (!await initAudio()) continue;
+                if (!await initAudio()) {
+                    log('Audio init failed');
+                    continue;
+                }
                 isListening = true;
                 echoData = [];
                 
@@ -562,6 +569,8 @@
                     echoData.push({ rawTime: rawElapsed, amplitude });
                     await new Promise(r => setTimeout(r, 5));
                 }
+                
+                isListening = false; // Clear BEFORE processing
                 
                 // Find max amplitude and its time
                 let maxAmp = 0, maxTime = 0;
