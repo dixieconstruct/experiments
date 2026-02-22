@@ -50,18 +50,21 @@
         
         #info {
             position: fixed;
-            bottom: 10px;
+            bottom: 5px;
             left: 50%;
             transform: translateX(-50%);
             color: #060;
-            font-size: 12px;
+            font-size: 11px;
             z-index: 100;
+            white-space: nowrap;
         }
         
         @media (max-width: 600px) {
+            #fluid {
+                padding-bottom: 25px;
+            }
             #info {
-                bottom: 5px;
-                font-size: 10px;
+                font-size: 9px;
             }
         }
     </style>
