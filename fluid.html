@@ -53,27 +53,12 @@
             color: #060;
             font-size: 12px;
         }
-        
-        @media (max-width: 600px) {
-            #info {
-                bottom: 5px;
-                left: 50%;
-                transform: translateX(-50%);
-                font-size: 9px;
-                white-space: nowrap;
-            }
-            #info::after {
-                content: "";
-                display: block;
-                height: 20px;
-            }
-        }
     </style>
 </head>
 <body>
     <a href="index.html" class="back-link">←</a>
     <pre id="fluid"></pre>
-    <div id="info">Tap to drop | 🔊 on</div>
+    <div id="info">Click/tap to drop rocks | 🔊 Sound on</div>
 
     <script>
         const fluidEl = document.getElementById('fluid');
