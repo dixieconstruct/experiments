@@ -170,6 +170,7 @@
     <div class="controls">
         <button id="ping">PING</button>
         <button id="continuous">Continuous</button>
+        <button id="calibrate">Calibrate</button>
     </div>
     
     <div class="params">
@@ -218,6 +219,7 @@
         let isListening = false;
         let continuous = false;
         let echoData = [];
+        let latencyOffset = 0; // Calibrated audio latency
         const SPEED_OF_SOUND = 343; // m/s at 20°C
         
         function resize() {
@@ -299,7 +301,7 @@
             return Math.sqrt(sum / bufferLength);
         }
         
-        async function ping() {
+        async function ping(forCalibration = false) {
             if (isListening) return;
             if (!await initAudio()) return;
             
@@ -317,12 +319,26 @@
             // Record echoes
             const samples = Math.floor(listenTime / 5);
             for (let i = 0; i < samples; i++) {
-                const elapsed = performance.now() - startTime - chirpDuration;
+                const rawElapsed = performance.now() - startTime - chirpDuration;
+                const elapsed = rawElapsed - latencyOffset; // Apply calibration
                 const amplitude = getEnvelope();
-                const distance = (elapsed / 1000) * SPEED_OF_SOUND / 2;
+                const distance = Math.max(0, (elapsed / 1000) * SPEED_OF_SOUND / 2);
                 
-                echoData.push({ time: elapsed, amplitude, distance });
+                echoData.push({ time: elapsed, rawTime: rawElapsed, amplitude, distance });
                 await new Promise(r => setTimeout(r, 5));
+            }
+            
+            if (forCalibration) {
+                // Find the first big spike - that's the direct sound
+                let firstSpike = null;
+                for (const echo of echoData) {
+                    if (echo.amplitude > threshold) {
+                        firstSpike = echo;
+                        break;
+                    }
+                }
+                isListening = false;
+                return firstSpike ? firstSpike.rawTime : null;
             }
             
             // Find first significant echo (after blanking period)
@@ -466,6 +482,36 @@
         document.getElementById('blank').addEventListener('input', (e) => {
             blankTime = parseInt(e.target.value);
             document.getElementById('blankVal').textContent = blankTime;
+        });
+        
+        document.getElementById('calibrate').addEventListener('click', async () => {
+            const btn = document.getElementById('calibrate');
+            btn.textContent = 'Hold phone flat...';
+            btn.disabled = true;
+            
+            // Run several pings and average
+            const measurements = [];
+            for (let i = 0; i < 5; i++) {
+                await new Promise(r => setTimeout(r, 200));
+                const t = await ping(true);
+                if (t !== null) measurements.push(t);
+            }
+            
+            if (measurements.length > 0) {
+                // Use median to reject outliers
+                measurements.sort((a, b) => a - b);
+                const median = measurements[Math.floor(measurements.length / 2)];
+                latencyOffset = median;
+                btn.textContent = `Cal: ${median.toFixed(0)}ms`;
+                distanceEl.textContent = '0.00';
+            } else {
+                btn.textContent = 'Failed';
+            }
+            
+            setTimeout(() => {
+                btn.textContent = 'Calibrate';
+                btn.disabled = false;
+            }, 2000);
         });
         
         // Initial draw
