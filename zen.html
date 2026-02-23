@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>ASCII Zen</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #000;
+            color: #0f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden;
+            font-family: monospace;
+        }
+        
+        #fluid {
+            font-family: 'Courier New', Consolas, monospace;
+            font-size: 12px;
+            line-height: 14px;
+            letter-spacing: 0px;
+            white-space: pre;
+            cursor: crosshair;
+            padding: 10px 20px;
+            user-select: none;
+            touch-action: none;
+            margin: 0 auto;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-variant-ligatures: none;
+            text-rendering: geometricPrecision;
+        }
+        
+        #info {
+            color: #060;
+            font-size: 12px;
+            text-align: center;
+            padding: 10px;
+        }
+        
+        #info a {
+            color: #0a0;
+        }
+    </style>
+</head>
+<body>
+    <pre id="fluid"></pre>
+    <div id="info">Click/tap to drop rocks | 🔊 Sound on<br>Brought to you by <a href="https://aaronrasmussen.com">AR</a></div>
+
+    <script>
+        const fluidEl = document.getElementById('fluid');
+        
+        // Audio setup
+        let audioCtx = null;
+        let masterGain = null;
+        
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.85;
+            masterGain.connect(audioCtx.destination);
+        }
+        
+        // Play a gentle chime based on position and intensity
+        function playChime(x, y, intensity) {
+            if (!audioCtx || intensity < 0.05) return;
+            
+            // Major chord frequencies (C major across octaves)
+            // C3, E3, G3, C4, E4, G4, C5, E5
+            const majorChord = [130.8, 164.8, 196.0, 261.6, 329.6, 392.0, 523.3, 659.3];
+            const noteIndex = Math.floor((x / COLS) * majorChord.length);
+            const baseFreq = majorChord[noteIndex % majorChord.length];
+            
+            // Y position shifts slightly within the octave range
+            const freq = baseFreq * (1 + (y / ROWS) * 0.1);
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            // Single pure sine wave + fifth below
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.value = freq / 1.5; // Perfect fifth down
+            
+            // Gentle envelope with long release
+            const now = audioCtx.currentTime;
+            const volume = Math.min(0.25, intensity * 0.5);
+            
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(volume, now + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 2.5);
+            
+            gain2.gain.setValueAtTime(0, now);
+            gain2.gain.linearRampToValueAtTime(volume * 0.6, now + 0.03);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + 3.0);
+            
+            osc.connect(gain);
+            osc2.connect(gain2);
+            gain.connect(masterGain);
+            gain2.connect(masterGain);
+            
+            osc.start(now);
+            osc2.start(now);
+            osc.stop(now + 2.6);
+            osc2.stop(now + 3.2);
+        }
+        
+        // Track active sound spots to avoid too many simultaneous sounds
+        let lastSoundTime = 0;
+        let lastEdgeSoundTime = 0;
+        const SOUND_THROTTLE = 50; // ms between sounds
+        const EDGE_SOUND_THROTTLE = 80;
+        
+        // Edge chime - higher, more crystalline
+        function playEdgeChime(x, y, intensity) {
+            if (!audioCtx || intensity < 0.03) return;
+            
+            const now = performance.now();
+            if (now - lastEdgeSoundTime < EDGE_SOUND_THROTTLE) return;
+            lastEdgeSoundTime = now;
+            
+            // Same major chord for edges, higher octave
+            // G4, C5, E5, G5, C6
+            const majorChord = [392.0, 523.3, 659.3, 784.0, 1046.5];
+            const noteIndex = Math.floor(((x / COLS) + (y / ROWS)) * majorChord.length / 2);
+            const freq = majorChord[noteIndex % majorChord.length];
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            
+            const time = audioCtx.currentTime;
+            const volume = Math.min(0.15, intensity * 0.3);
+            
+            gain.gain.setValueAtTime(0, time);
+            gain.gain.linearRampToValueAtTime(volume, time + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.001, time + 1.5);
+            
+            osc.connect(gain);
+            gain.connect(masterGain);
+            
+            osc.start(time);
+            osc.stop(time + 1.6);
+        }
+        
+        // Grid size - will be calculated based on viewport
+        let COLS = 70;
+        let ROWS = 35;
+        
+        // Wave state (height and velocity)
+        let height = [];
+        let velocity = [];
+        
+        function resizeGrid() {
+            const charWidth = 10;  // approximate char width in pixels
+            const charHeight = 14; // approximate char height in pixels
+            
+            const availWidth = window.innerWidth - 40;
+            const availHeight = window.innerHeight - 60;
+            
+            const newCols = Math.floor(availWidth / charWidth);
+            const newRows = Math.floor(availHeight / charHeight);
+            
+            if (newCols !== COLS || newRows !== ROWS) {
+                COLS = Math.max(20, Math.min(120, newCols));
+                ROWS = Math.max(15, Math.min(60, newRows));
+                init();
+            }
+        }
+        
+        // ASCII chars for different slopes
+        // Center = flat, others show direction of slope
+        const FLAT = '~';
+        const CHARS = {
+            flat: '~·.',
+            up: '^\'`',
+            down: 'v,.',
+            left: '\\<(',
+            right: '/)>',
+            upLeft: '\\`╲',
+            upRight: '/\'╱',
+            downLeft: '\\,╲',
+            downRight: '/,╱'
+        };
+        
+        // Initialize
+        function init() {
+            for (let i = 0; i < COLS * ROWS; i++) {
+                height[i] = 0;
+                velocity[i] = 0;
+            }
+        }
+        
+        function idx(x, y) {
+            return y * COLS + x;
+        }
+        
+        // Drop a rock - creates a depression that bounces back
+        function dropRock(x, y, radius, strength) {
+            const aspectRatio = 1.8; // chars are taller than wide
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius * aspectRatio; dx <= radius * aspectRatio; dx++) {
+                    // Adjust distance calc for aspect ratio
+                    const dist = Math.sqrt((dx/aspectRatio)*(dx/aspectRatio) + dy*dy);
+                    if (dist <= radius) {
+                        const px = Math.floor(x + dx);
+                        const py = Math.floor(y + dy);
+                        if (px >= 0 && px < COLS && py >= 0 && py < ROWS) {
+                            const i = idx(px, py);
+                            const falloff = Math.cos((dist / radius) * Math.PI / 2);
+                            height[i] -= strength * falloff;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Wave equation simulation
+        function simulate() {
+            const damping = 0.99;
+            const speed = 0.4;
+            // Characters are ~1.4x taller than wide, compensate
+            const aspectRatio = 1.8; // horizontal stretch factor
+            
+            const newHeight = new Float32Array(COLS * ROWS);
+            const newVelocity = new Float32Array(COLS * ROWS);
+            
+            for (let y = 1; y < ROWS - 1; y++) {
+                for (let x = 1; x < COLS - 1; x++) {
+                    const i = idx(x, y);
+                    
+                    // Laplacian with aspect ratio correction
+                    // Weight horizontal neighbors more to stretch horizontally
+                    const laplacian = (
+                        (height[idx(x-1, y)] + height[idx(x+1, y)]) * aspectRatio +
+                        height[idx(x, y-1)] + height[idx(x, y+1)]
+                    ) / (2 + 2 * aspectRatio) - height[i];
+                    
+                    // Wave equation: acceleration proportional to curvature
+                    newVelocity[i] = (velocity[i] + laplacian * speed) * damping;
+                    newHeight[i] = height[i] + newVelocity[i];
+                }
+            }
+            
+            // Boundary reflection (edges push back) + sound
+            for (let x = 0; x < COLS; x++) {
+                // Top edge
+                if (Math.abs(height[idx(x, 1)]) > 0.03) {
+                    playEdgeChime(x, 0, Math.abs(height[idx(x, 1)]));
+                }
+                newHeight[idx(x, 0)] = newHeight[idx(x, 1)] * 0.8;
+                
+                // Bottom edge
+                if (Math.abs(height[idx(x, ROWS-2)]) > 0.03) {
+                    playEdgeChime(x, ROWS-1, Math.abs(height[idx(x, ROWS-2)]));
+                }
+                newHeight[idx(x, ROWS-1)] = newHeight[idx(x, ROWS-2)] * 0.8;
+            }
+            for (let y = 0; y < ROWS; y++) {
+                // Left edge
+                if (Math.abs(height[idx(1, y)]) > 0.03) {
+                    playEdgeChime(0, y, Math.abs(height[idx(1, y)]));
+                }
+                newHeight[idx(0, y)] = newHeight[idx(1, y)] * 0.8;
+                
+                // Right edge
+                if (Math.abs(height[idx(COLS-2, y)]) > 0.03) {
+                    playEdgeChime(COLS-1, y, Math.abs(height[idx(COLS-2, y)]));
+                }
+                newHeight[idx(COLS-1, y)] = newHeight[idx(COLS-2, y)] * 0.8;
+            }
+            
+            height = newHeight;
+            velocity = newVelocity;
+        }
+        
+        // Render to ASCII based on slope
+        function render() {
+            let output = '';
+            let maxActivity = 0;
+            let maxX = 0, maxY = 0;
+            
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    const i = idx(x, y);
+                    const h = height[i];
+                    
+                    // Track most active spot for sound
+                    const activity = Math.abs(velocity[i]);
+                    if (activity > maxActivity) {
+                        maxActivity = activity;
+                        maxX = x;
+                        maxY = y;
+                    }
+                    
+                    // Calculate slope (gradient)
+                    let dx = 0, dy = 0;
+                    if (x > 0 && x < COLS - 1) {
+                        dx = height[idx(x+1, y)] - height[idx(x-1, y)];
+                    }
+                    if (y > 0 && y < ROWS - 1) {
+                        dy = height[idx(x, y+1)] - height[idx(x, y-1)];
+                    }
+                    
+                    const threshold = 0.015;
+                    const strongThreshold = 0.04;
+                    const veryStrongThreshold = 0.08;
+                    
+                    let char = '.';  // Default calm water
+                    
+                    const absDx = Math.abs(dx);
+                    const absDy = Math.abs(dy);
+                    
+                    if (absDx < threshold && absDy < threshold) {
+                        // Flat - show ripple based on height
+                        if (h > 0.08) char = 'O';
+                        else if (h > 0.04) char = 'o';
+                        else if (h < -0.08) char = '@';
+                        else if (h < -0.04) char = '*';
+                        else if (Math.abs(h) > 0.01) char = '~';
+                        else char = '.';
+                    } else if (absDx > absDy * 1.5) {
+                        // Mostly horizontal slope
+                        if (dx > veryStrongThreshold) char = '(';
+                        else if (dx > strongThreshold) char = '\\';
+                        else if (dx > threshold) char = '(';
+                        else if (dx < -veryStrongThreshold) char = ')';
+                        else if (dx < -strongThreshold) char = '/';
+                        else if (dx < -threshold) char = ')';
+                    } else if (absDy > absDx * 1.5) {
+                        // Mostly vertical slope
+                        if (dy > veryStrongThreshold) char = '=';
+                        else if (dy > strongThreshold) char = '-';
+                        else if (dy > threshold) char = '-';
+                        else if (dy < -veryStrongThreshold) char = '=';
+                        else if (dy < -strongThreshold) char = '-';
+                        else if (dy < -threshold) char = '-';
+                    } else {
+                        // Diagonal slopes
+                        if (dx > 0 && dy > 0) char = '\\';
+                        else if (dx > 0 && dy < 0) char = '/';
+                        else if (dx < 0 && dy > 0) char = '/';
+                        else if (dx < 0 && dy < 0) char = '\\';
+                    }
+                    
+                    output += char;
+                }
+                output += '\n';
+            }
+            fluidEl.textContent = output;
+            
+            // Play sound for wave activity
+            const now = performance.now();
+            if (maxActivity > 0.01 && now - lastSoundTime > SOUND_THROTTLE) {
+                playChime(maxX, maxY, maxActivity);
+                lastSoundTime = now;
+            }
+        }
+        
+        // Input handling
+        let lastDragTime = 0;
+        const DRAG_THROTTLE = 100; // ms between drag drops
+        
+        function handleInput(clientX, clientY, isDrag = false) {
+            const rect = fluidEl.getBoundingClientRect();
+            const charWidth = rect.width / COLS;
+            const charHeight = rect.height / ROWS;
+            
+            const x = (clientX - rect.left) / charWidth;
+            const y = (clientY - rect.top) / charHeight;
+            
+            if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+                if (isDrag) {
+                    const now = performance.now();
+                    if (now - lastDragTime < DRAG_THROTTLE) return;
+                    lastDragTime = now;
+                    dropRock(x, y, 2, 0.5); // Smaller, gentler drops when dragging
+                } else {
+                    dropRock(x, y, 3, 0.8); // Full rock on click
+                }
+            }
+        }
+        
+        fluidEl.addEventListener('mousedown', (e) => {
+            initAudio();
+            handleInput(e.clientX, e.clientY, false);
+        });
+        
+        fluidEl.addEventListener('mousemove', (e) => {
+            if (e.buttons === 1) {
+                handleInput(e.clientX, e.clientY, true);
+            }
+        });
+        
+        fluidEl.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            initAudio();
+            for (const touch of e.touches) {
+                handleInput(touch.clientX, touch.clientY, false);
+            }
+        });
+        
+        fluidEl.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            for (const touch of e.touches) {
+                handleInput(touch.clientX, touch.clientY, true);
+            }
+        });
+        
+        // Main loop
+        function loop() {
+            simulate();
+            render();
+            requestAnimationFrame(loop);
+        }
+        
+        resizeGrid();
+        window.addEventListener('resize', resizeGrid);
+        loop();
+    </script>
+</body>
+</html>
