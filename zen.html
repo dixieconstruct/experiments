@@ -13,6 +13,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            overflow: hidden;
             font-family: monospace;
         }
         
@@ -32,10 +33,13 @@
         }
         
         #info {
+            position: fixed;
+            bottom: 10px;
+            left: 0;
+            right: 0;
             color: #060;
             font-size: 12px;
             text-align: center;
-            padding: 10px;
         }
         
         #info a {
@@ -162,8 +166,8 @@
             const charWidth = 10;  // approximate char width in pixels
             const charHeight = 14; // approximate char height in pixels
             
-            const availWidth = window.innerWidth - 40;
-            const availHeight = window.innerHeight - 60;
+            const availWidth = window.innerWidth - 20;
+            const availHeight = window.innerHeight - 80; // Reserve space for info text
             
             const newCols = Math.floor(availWidth / charWidth);
             const newRows = Math.floor(availHeight / charHeight);
